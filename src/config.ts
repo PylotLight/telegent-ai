@@ -9,7 +9,7 @@ export const CONFIG_FILE = path.join(BRAIN_DIR, "agent_config.md");
 export let TELEGRAM_TOKEN = "";
 export let OPENROUTER_API_KEY = "";
 export let MY_TELEGRAM_ID = 0;
-export let DEFAULT_MODEL = "google/gemma-4-31b-it:free";
+export let DEFAULT_MODEL = "openrouter/free";
 
 export let agentConfig = {
   persona: "General AI Assistant",
@@ -86,10 +86,9 @@ export async function getSystemPrompt(threadKey: number) {
 Your workspace is '${BRAIN_DIR}'. You primarily use ${agentConfig.defaultScriptingLanguage}.
 Your safety protocols: ${agentConfig.safetyProtocols}.
 
-FORMATTING INSTRUCTIONS:
-- You must use Telegram MarkdownV2 natively.
-- Use *bold* (not **bold**). Use _italic_ (not *italic*).
-- To tag or ping a user, strictly use this format: [Master](tg://user?id=${MY_TELEGRAM_ID})
+FORMATTING:
+- Use standard markdown (e.g. **bold**, *italic*, \`code\`).
+- To tag or ping the owner, use: [Master](tg://user?id=${MY_TELEGRAM_ID})
 
 If you build a tool:
 1. Use 'write_file' to save it to './brain'.

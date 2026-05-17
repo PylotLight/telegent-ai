@@ -27,6 +27,20 @@ function formatAgentResponse(content: string): string {
   return txt;
 }
 
+function mdToHTML(text: string): string {
+  if (!text) return text;
+  let html = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  html = html.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>'); // Bold
+  html = html.replace(/\*(.*?)\*/g, '<i>$1</i>'); // Italic fallback
+  html = html.replace(/_(.*?)_/g, '<i>$1</i>'); // Italic
+  html = html.replace(/```(?:[a-z]+)?\n([\s\S]*?)```/g, '<pre><code>$1</code></pre>'); // Code blocks
+  html = html.replace(/`(.*?)`/g, '<code>$1</code>'); // Inline code
+  html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2">$1</a>'); // Links & Tagging
+  return html;
+}
 
 function getOpenRouterClient() {
   return new OpenAI({
@@ -104,17 +118,67 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
 
       try {
         DB.log("INFO", `Sending request to model ${model} with ${messagesForAPI.length} messages`);
+        
         completion = await withRetry(async () => {
-          const result = await openai.chat.completions.create({
+          // LIVE STREAMING REQUEST
+          const stream = await openai.chat.completions.create({
             model: model,
             messages: messagesForAPI as any,
             tools: AGENT_TOOLS as any,
+            stream: true,
+            stream_options: { include_usage: true } // Request usage on final chunk
           });
-          if (result && result.error) throw new Error(result.error.message || JSON.stringify(result.error));
-          if (!result || !result.choices || result.choices.length === 0) {
-            throw new Error(`Model returned an empty or invalid response.`);
+
+          let fullContent = "";
+          let toolCalls: any[] = [];
+          let lastEditTime = Date.now();
+          let finalUsage: any = null;
+
+          for await (const chunk of stream) {
+            if ((chunk as any).usage) finalUsage = (chunk as any).usage;
+
+            const delta = chunk.choices?.[0]?.delta;
+            if (!delta) continue;
+
+            // Stream Text Chunk
+            if (delta.content) {
+              fullContent += delta.content;
+              const now = Date.now();
+              // Batch updates to avoid Telegram 429 API rate limits (1.5 seconds)
+              if (now - lastEditTime > 1500) {
+                const display = fullContent.length > 4000 ? fullContent.slice(-4000) : fullContent;
+                // No parse_mode while streaming to prevent half-baked tags from crashing API
+                safeEditMessage(bot, chatId, statusMsgId, "💭 " + display).catch(()=>{});
+                lastEditTime = now;
+              }
+            }
+
+            // Stream Tool Calls Chunk
+            if (delta.tool_calls) {
+              for (const tc of delta.tool_calls) {
+                const idx = tc.index;
+                if (!toolCalls[idx]) {
+                  toolCalls[idx] = { id: tc.id, type: "function", function: { name: tc.function?.name || "", arguments: "" } };
+                } else {
+                  if (tc.function?.name) toolCalls[idx].function.name += tc.function.name;
+                  if (tc.function?.arguments) toolCalls[idx].function.arguments += tc.function.arguments;
+                }
+              }
+            }
           }
-          return result;
+
+          const validToolCalls = toolCalls.filter(Boolean);
+          
+          return {
+            usage: finalUsage,
+            choices: [{
+              message: {
+                role: "assistant",
+                content: fullContent,
+                tool_calls: validToolCalls.length > 0 ? validToolCalls : undefined
+              }
+            }]
+          };
         }, `Model ${model} request`, isRetryableError);
       } catch (error: any) {
         // If we've exhausted all retries for this model, try fallback models
@@ -190,12 +254,12 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
       }
 
       const msg = completion.choices[0].message;
-      DB.addMessage(threadKey, { role: msg.role, content: msg.content || "", toolCallId: msg.tool_calls?.[0]?.id });
+      DB.addMessage(threadKey, { role: msg.role, content: msg.content || "", toolCallId: msg.tool_calls?.[0]?.id }); 
       history.push(msg);
 
       if (!msg.tool_calls || msg.tool_calls.length === 0) {
-        const formattedText = formatAgentResponse(msg.content || "Done\\.");
-        await safeEditMessage(bot, chatId, statusMsgId, formattedText, { parse_mode: "MarkdownV2" });
+        const finalHtml = mdToHTML(msg.content || "Done.");
+        await safeEditMessage(bot, chatId, statusMsgId, finalHtml, { parse_mode: "HTML" });
         return;
       }
 

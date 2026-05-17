@@ -12,7 +12,6 @@
   "dependencies": {
     "grammy": "^1.42.0",
     "lifx-lan-client": "^2.1.2",
-    "openai": "^6.37.0",
-    "telegram-markdown-v2": "^0.0.4"
+    "openai": "^6.37.0"
   }
 }

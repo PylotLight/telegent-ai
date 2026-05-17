@@ -1,18 +1,16 @@
 import { Bot, InlineKeyboard } from "grammy";
-import { md } from "telegram-markdown-v2"; // Using the template tag from the package
 import { State } from "./state";
 import { getSystemPrompt, agentConfig } from "./config";
 import { runAgent } from "./agent";
 import { DB } from "./db";
 
 export function setupCommands(bot: Bot) {
-  bot.command("start", (ctx) => ctx.reply("👋 Agent online\\. Use /ai to wake me\\. /model to switch AI\\. /status for info\\. /clear to reset\\.", { parse_mode: "MarkdownV2" }));
+  bot.command("start", (ctx) => ctx.reply("👋 Agent online. Use /ai to force trigger. /model to switch AI. /status for info. /clear to reset."));
 
   bot.command("clear", (ctx) => {
     const threadKey = ctx.message?.message_thread_id || ctx.chat.id;
     DB.clearMessages(threadKey);
-    DB.upsertThread(threadKey, { lastActive: 0 }); 
-    ctx.reply("🧹 Memory wiped, AI is now sleeping in this thread\\.", { message_thread_id: threadKey, parse_mode: "MarkdownV2" });
+    ctx.reply("🧹 Memory wiped. Context reset.", { message_thread_id: threadKey });
   });
 
   bot.command("status", async (ctx) => {
@@ -21,28 +19,24 @@ export function setupCommands(bot: Bot) {
     const stats = DB.getStats(threadKey) || { requests: 0, prompt_tokens: 0, completion_tokens: 0, cached_tokens: 0, last_context_size: 0 };
     const thread = DB.getThread(threadKey);
     
-    const oneHourAgo = Date.now() - 60 * 60 * 1000;
-    const isActive = (thread && thread.last_active > oneHourAgo) ? "🟢 Listening" : "🔴 Sleeping";
     const total = stats.prompt_tokens + stats.completion_tokens;
+    let warning = stats.last_context_size > agentConfig.maxTokenWarning
+      ? `\n\n⚠️ <b>Warning: Context size is high!</b>` : "";
     const model = thread?.model_id || State.currentAiModel;
 
-    // Using the 'md' template tag safely escapes variables injected while parsing intended markdown characters!
-    const msg = md`📊 *LLM Context Status*
-*State:* ${isActive}
-*Memory:* ${history.length} msgs
-*Context:* ~${stats.last_context_size.toLocaleString()} tokens
-*Model:* \`${model}\`
+    const msg = `📊 <b>LLM Context Status</b>
+<b>State:</b> 🟢 Listening
+<b>Memory:</b> ${history.length} msgs
+<b>Context:</b> ~${stats.last_context_size.toLocaleString()} tokens
+<b>Model:</b> <code>${model}</code>
 
-🪙 *Token Usage:*
-*Prompt:* ${stats.prompt_tokens.toLocaleString()}
-*Output:* ${stats.completion_tokens.toLocaleString()}
-*Total:* ${total.toLocaleString()}
-⚡ *Cached (Saved!):* ${stats.cached_tokens.toLocaleString()}`;
+🪙 <b>Token Usage:</b>
+<b>Prompt:</b> ${stats.prompt_tokens.toLocaleString()}
+<b>Output:</b> ${stats.completion_tokens.toLocaleString()}
+<b>Total:</b> ${total.toLocaleString()}
+⚡ <b>Cached (Saved!):</b> ${stats.cached_tokens.toLocaleString()}${warning}`;
 
-    let warning = stats.last_context_size > agentConfig.maxTokenWarning
-      ? md`\n\n⚠️ *Warning: Context size is high!*` : "";
-
-    return ctx.reply(msg + warning, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
+    return ctx.reply(msg, { parse_mode: "HTML", message_thread_id: threadKey });
   });
 
   bot.command("model", async (ctx) => {
@@ -52,12 +46,12 @@ export function setupCommands(bot: Bot) {
     const currentModel = thread?.model_id || State.currentAiModel;
 
     if (!match) {
-      return ctx.reply(md`🤖 *Current:* \`${currentModel}\`\n\n*Usage:*\nSet: \`/model <id>\`\nSearch: \`/model search free\``, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
+      return ctx.reply(`🤖 <b>Current:</b> <code>${currentModel}</code>\n\n<b>Usage:</b>\nSet: <code>/model &lt;id&gt;</code>\nSearch: <code>/model search free</code>`, { parse_mode: "HTML", message_thread_id: threadKey });
     }
 
     if (match.toLowerCase().startsWith("search ")) {
       const query = match.substring(7).trim().toLowerCase();
-      const statusMsg = await ctx.reply(md`🔍 _Searching OpenRouter for "${query}"..._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
+      const statusMsg = await ctx.reply(`🔍 <i>Searching OpenRouter for "${query}"...</i>`, { parse_mode: "HTML", message_thread_id: threadKey });
 
       try {
         const response = await fetch("https://openrouter.ai/api/v1/models");
@@ -73,7 +67,7 @@ export function setupCommands(bot: Bot) {
         models = models.filter(m => m.id.length <= 60).slice(0, 10);
 
         if (models.length === 0) {
-          return ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, md`❌ No models found matching "${query}"\\.`, { parse_mode: "MarkdownV2" });
+          return ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, `❌ No models found matching "${query}".`, { parse_mode: "HTML" });
         }
 
         const kb = new InlineKeyboard();
@@ -84,24 +78,24 @@ export function setupCommands(bot: Bot) {
         return ctx.api.editMessageText(
           ctx.chat.id,
           statusMsg.message_id,
-          md`🔍 *Results for "${query}"*:\n\n_Click a model below to switch to it instantly:_`,
-          { parse_mode: "MarkdownV2", reply_markup: kb }
+          `🔍 <b>Results for "${query}"</b>:\n\n<i>Click a model below to switch to it instantly:</i>`,
+          { parse_mode: "HTML", reply_markup: kb }
         );
       } catch (e: any) {
-        return ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, md`⚠️ API Error: ${e.message}`, { parse_mode: "MarkdownV2" });
+        return ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, `⚠️ API Error: ${e.message}`, { parse_mode: "HTML" });
       }
     }
 
     DB.upsertThread(threadKey, { modelId: match });
     const systemPrompt = await getSystemPrompt(threadKey);
     DB.updateSystemPrompt(threadKey, systemPrompt);
-    ctx.reply(md`✅ Model set to:\n\`${match}\``, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
+    ctx.reply(`✅ Model set to:\n<code>${match}</code>`, { parse_mode: "HTML", message_thread_id: threadKey });
   });
 
   bot.command("ai", async (ctx) => {
     const threadKey = ctx.message?.message_thread_id || ctx.chat.id;
     DB.upsertThread(threadKey, { lastActive: Date.now() });
-    if (!ctx.match) return ctx.reply("🟢 AI is awake\\!", { parse_mode: "MarkdownV2", message_thread_id: threadKey });
+    if (!ctx.match) return ctx.reply("🟢 AI is always listening!", { message_thread_id: threadKey });
     await processUserMessage(bot, ctx.match, threadKey, ctx.chat.id);
   });
 }
@@ -114,6 +108,6 @@ export async function processUserMessage(bot: Bot, prompt: string, threadKey: nu
     DB.upsertStats(threadKey, { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, lastContextSize: 0 }); 
   }
   DB.addMessage(threadKey, { role: "user", content: prompt });
-  const statusMsg = await bot.api.sendMessage(chatId, `🤔 _Thinking\\.\\.\\._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
+  const statusMsg = await bot.api.sendMessage(chatId, `🤔 <i>Thinking...</i>`, { parse_mode: "HTML", message_thread_id: threadKey });
   await runAgent(bot, threadKey, chatId, statusMsg.message_id);
 }

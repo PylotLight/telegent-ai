@@ -1,6 +1,16 @@
-FROM oven/bun:1-slim
+# Stage 1: Build & Dependencies
+FROM oven/bun:1-slim AS builder
+WORKDIR /app
+# Use wildcard to safely copy bun.lockb if it exists
+COPY package.json bun.lock* ./
+RUN bun install --frozen-lockfile
+COPY . .
 
-# Install any underlying Debian dependencies you might need for shell commands
+# Stage 2: Minimal Runtime
+FROM oven/bun:1-slim
+WORKDIR /app
+
+# Install shell deps
 RUN apt-get update && apt-get install -y \
     curl \
     wget \
@@ -8,17 +18,11 @@ RUN apt-get update && apt-get install -y \
     procps \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/src ./src
+COPY --from=builder /app/package.json /app/tsconfig.json ./
 
-# Install dependencies
-COPY package.json bun.lockb ./
-RUN bun install --production
-
-# Copy application code
-COPY src ./src
-COPY tsconfig.json ./
-
-# Create the sandboxed brain directory and adjust permissions
+# Create the brain volume point
 RUN mkdir -p /app/brain && chmod 777 /app/brain
 
 ENV NODE_ENV=production
