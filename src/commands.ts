@@ -18,7 +18,7 @@ export function setupCommands(bot: Bot) {
     const history = DB.getMessages(threadKey) || [];
     const stats = DB.getStats(threadKey) || { requests: 0, prompt_tokens: 0, completion_tokens: 0, cached_tokens: 0, last_context_size: 0 };
     const thread = DB.getThread(threadKey);
-    
+
     const total = stats.prompt_tokens + stats.completion_tokens;
     let warning = stats.last_context_size > agentConfig.maxTokenWarning
       ? `\n\n⚠️ <b>Warning: Context size is high!</b>` : "";
@@ -95,7 +95,14 @@ export function setupCommands(bot: Bot) {
   bot.command("ai", async (ctx) => {
     const threadKey = ctx.message?.message_thread_id || ctx.chat.id;
     DB.upsertThread(threadKey, { lastActive: Date.now() });
-    if (!ctx.match) return ctx.reply("🟢 AI is always listening!", { message_thread_id: threadKey });
+
+    if (!ctx.match) {
+      return ctx.reply("🤖 <b>Usage:</b> <code>/ai &lt;your message&gt;</code>\n\n<i>Note: You can also just reply directly to any of my messages, or DM me to chat without using commands!</i>", {
+        parse_mode: "HTML",
+        message_thread_id: threadKey
+      });
+    }
+
     await processUserMessage(bot, ctx.match, threadKey, ctx.chat.id);
   });
 }
@@ -105,7 +112,7 @@ export async function processUserMessage(bot: Bot, prompt: string, threadKey: nu
   if (history.length === 0) {
     const systemPrompt = await getSystemPrompt(threadKey);
     DB.updateSystemPrompt(threadKey, systemPrompt);
-    DB.upsertStats(threadKey, { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, lastContextSize: 0 }); 
+    DB.upsertStats(threadKey, { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, lastContextSize: 0 });
   }
   DB.addMessage(threadKey, { role: "user", content: prompt });
   const statusMsg = await bot.api.sendMessage(chatId, `🤔 <i>Thinking...</i>`, { parse_mode: "HTML", message_thread_id: threadKey });
