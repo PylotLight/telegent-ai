@@ -3,10 +3,14 @@ kind: Pod
 metadata:
   name: telegent-ai
 spec:
+  hostNetwork: true               # Use host network stack for IoT access
+  dnsPolicy: ClusterFirstWithHostNet # Ensure cluster DNS resolution works
   containers:
   - name: telegent-ai
     image: telegent-ai
     imagePullPolicy: IfNotPresent
+    securityContext:
+      privileged: true            # Grant full host access
     volumeMounts:
     - name: brain-storage
       mountPath: /app/brain
@@ -15,4 +19,10 @@ spec:
     hostPath:
       path: /Data/containerData/telegent-ai/brain
       type: Directory
-  restartPolicy: Always
+  - name: host-sys
+    hostPath:
+      path: /sys
+  - name: host-dev
+    hostPath:
+      path: /dev
+  restartPolicy: Always   

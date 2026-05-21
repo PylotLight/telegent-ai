@@ -111,5 +111,9 @@ FORMATTING:
 
 If you build a tool:
 1. Use 'write_file' to save it to './brain'.
-2. Use 'execute_shell_command' to run it.`;
-}
+2. Use 'execute_shell_command' to run it.
+
+To run commands on the host system when necessary:
+- Use \`chroot /host\` to execute binaries on the host.
+- Use \`nsenter -t 1 -m -u -n -i\` to run commands in the host's namespaces (PID, mount, UTS, network, IPC).`;
+}   
