@@ -1,4 +1,4 @@
-# 🤖 Telegram AI Agent Platform
+# 🤖  TelegentAI - Telegram AI Agent Platform
 
 A highly capable, local-tool-enabled Telegram AI Agent powered by **OpenRouter** and built with **Grammy**. This platform allows an LLM to converse, manage local files (in a sandboxed directory), dynamically search for models, and execute shell commands safely via a Human-In-The-Loop (HITL) approval system.
 
