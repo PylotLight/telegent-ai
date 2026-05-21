@@ -1,6 +1,14 @@
 import { Database } from "bun:sqlite";
+import { mkdirSync } from "node:fs";
+import path from "node:path";
 
-const db = new Database("state.db");
+// Ensure brain directory exists before DB init
+const BRAIN_DIR = path.join(process.cwd(), "brain");
+mkdirSync(BRAIN_DIR, { recursive: true });
+
+// Move DB into brain for easy Docker volume mounting
+const dbPath = path.join(BRAIN_DIR, "state.db");
+const db = new Database(dbPath);
 
 // Initialize Schema
 db.run(`

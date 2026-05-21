@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: telegent-ai
+spec:
+  containers:
+  - name: telegent-ai
+    image: telegent-ai
+    imagePullPolicy: IfNotPresent
+    volumeMounts:
+    - name: brain-storage
+      mountPath: /app/brain
+  volumes:
+  - name: brain-storage
+    hostPath:
+      path: /Data/containerData/telegent-ai/brain
+      type: Directory
+  restartPolicy: Always

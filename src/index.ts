@@ -32,16 +32,7 @@ async function start() {
     if (ctx.message.text.startsWith("/")) return;
     const threadKey = ctx.message?.message_thread_id || ctx.chat.id;
     
-    // 💤 Session Auto-Sleep Logic
-    const thread = DB.getThread(threadKey);
-    const oneHourAgo = Date.now() - 60 * 60 * 1000;
-    
-    if (thread && thread.last_active < oneHourAgo) {
-      // Thread is sleeping. Ignore unless /ai is used.
-      return;
-    }
-
-    // Update last active timestamp
+    // Auto-sleep logic removed. Always awake.
     DB.upsertThread(threadKey, { lastActive: Date.now() });
     await processUserMessage(bot, ctx.message.text, threadKey, ctx.chat.id);
   });
