@@ -2,7 +2,7 @@ import { Bot, GrammyError, HttpError } from "grammy";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import * as path from "node:path";
-import { TELEGRAM_TOKEN, MY_TELEGRAM_ID, ensureBrainDir, loadAgentConfig, initSecrets, getSystemPrompt } from "./config";
+import { TELEGRAM_TOKEN, MY_TELEGRAM_ID, ensureBrainDir, loadAgentConfig, initSecrets, getSystemPrompt, DEFAULT_MODEL } from "./config";
 import { State } from "./state";
 import { processUserMessage, setupCommands } from "./commands";
 import { runAgent } from "./agent";
@@ -12,7 +12,7 @@ const execAsync = promisify(exec);
 
 async function start() {
   // 1. Run CLI/Secret Initialization
-  await ensureBrainDir(); 
+  await ensureBrainDir();
   await initSecrets();
   await loadAgentConfig();
 
@@ -30,9 +30,17 @@ async function start() {
   // Listen for conversational text
   bot.on("message:text", async (ctx) => {
     if (ctx.message.text.startsWith("/")) return;
+
+    const isPrivate = ctx.chat.type === "private";
+    const isReplyToBot = ctx.message.reply_to_message?.from?.id === ctx.me.id;
+
+    // If we are in a group/channel and the bot wasn't explicitly replied to, 
+    // ignore it so it doesn't interrupt other apps/updates.
+    if (!isPrivate && !isReplyToBot) {
+      return;
+    }
+
     const threadKey = ctx.message?.message_thread_id || ctx.chat.id;
-    
-    // Auto-sleep logic removed. Always awake.
     DB.upsertThread(threadKey, { lastActive: Date.now() });
     await processUserMessage(bot, ctx.message.text, threadKey, ctx.chat.id);
   });
@@ -98,7 +106,7 @@ async function start() {
     }
   });
 
-  bot.catch((err) => {
+ bot.catch((err) => {
     const ctx = err.ctx;
     console.error(`[Telegram Error] while handling update ${ctx.update.update_id}:`);
     const e = err.error;
@@ -111,8 +119,24 @@ async function start() {
     }
   });
 
-  bot.start();
-  console.log(`🤖 Agent architecture initialized. Default Model: ${State.currentAiModel}`);
+  // Replaced bottom startup lines:
+  bot.start({
+    onStart: (botInfo) => {
+      console.log(`✅ Authentication Successful!`);
+      console.log(`🤖 Agent online! Logged in as @${botInfo.username}`);
+      console.log(`🧠 Default Model: ${DEFAULT_MODEL}`);
+    }
+  }).catch((err) => {
+    if (err.description === "Not Found" || err.error_code === 404) {
+      console.error("\n❌ CRITICAL ERROR: Telegram returned '404 Not Found'.");
+      console.error("👉 This means your TELEGRAM_TOKEN is invalid or incorrect.");
+      console.error("👉 Please double-check your token in brain/secrets.json\n");
+    } else {
+      console.error("❌ CRITICAL ERROR: Failed to start bot:", err);
+    }
+    process.exit(1);
+  });
 }
+
 
 start();
