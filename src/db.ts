@@ -75,6 +75,17 @@ db.run(`
   )
 `);
 
+db.run(`
+  CREATE TABLE IF NOT EXISTS scheduled_tasks (
+    id TEXT PRIMARY KEY,
+    thread_key INTEGER,
+    chat_id INTEGER,
+    type TEXT,
+    time_expression TEXT,
+    action_prompt TEXT
+  )
+`);
+
 export const DB = {
   // Thread Management
   getThread: (threadKey: number) => {
@@ -131,6 +142,18 @@ export const DB = {
   // NEW: Log Method
   log: (level: string, message: string) => {
     db.run("INSERT INTO logs (level, message, timestamp) VALUES (?, ?, ?)", [level, message, Date.now()]);
+  },
+
+  // --- Scheduled Tasks ---
+  addScheduledTask: (task: { id: string, threadKey: number, chatId: number, type: string, timeExpr: string, actionPrompt: string }) => {
+    db.run("INSERT INTO scheduled_tasks (id, thread_key, chat_id, type, time_expression, action_prompt) VALUES (?, ?, ?, ?, ?, ?)", 
+      [task.id, task.threadKey, task.chatId, task.type, task.timeExpr, task.actionPrompt]);
+  },
+  getScheduledTasks: () => {
+    return db.query("SELECT * FROM scheduled_tasks").all() as any[];
+  },
+  deleteScheduledTask: (id: string) => {
+    db.run("DELETE FROM scheduled_tasks WHERE id = ?", [id]);
   },
 
   // Pending Actions

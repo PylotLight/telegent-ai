@@ -3,10 +3,10 @@ import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import * as path from "node:path";
 import { TELEGRAM_TOKEN, MY_TELEGRAM_ID, ensureBrainDir, loadAgentConfig, initSecrets, getSystemPrompt, DEFAULT_MODEL } from "./config";
-import { State } from "./state";
 import { processUserMessage, setupCommands } from "./commands";
 import { runAgent } from "./agent";
 import { DB } from "./db";
+import { initScheduler } from "./scheduler";
 
 const execAsync = promisify(exec);
 
@@ -18,7 +18,7 @@ async function start() {
 
   // 2. Initialize Bot
   const bot = new Bot(TELEGRAM_TOKEN);
-
+  initScheduler(bot);
   // Auth Middleware
   bot.use(async (ctx, next) => {
     if (ctx.from?.id !== MY_TELEGRAM_ID) return;
@@ -106,7 +106,7 @@ async function start() {
     }
   });
 
- bot.catch((err) => {
+  bot.catch((err) => {
     const ctx = err.ctx;
     console.error(`[Telegram Error] while handling update ${ctx.update.update_id}:`);
     const e = err.error;

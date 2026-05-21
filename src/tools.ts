@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { BRAIN_DIR, OPENROUTER_API_KEY } from "./config";
+import { BRAIN_DIR } from "./config";
 import { lifxManager } from "./lifx";
+import crypto from "node:crypto";
 
 export const AGENT_TOOLS = [
   { type: "function", function: { name: "execute_shell_command", description: "Executes a shell command. Requires approval.", parameters: { type: "object", properties: { command: { type: "string" } }, required: ["command"] } } },
@@ -34,7 +35,25 @@ export const AGENT_TOOLS = [
         required: ["light_id"] 
       } 
     } 
-  }
+  },
+  { 
+    type: "function", 
+    function: { 
+      name: "schedule_task", 
+      description: "Creates a background task. Type is 'one_time' or 'cron'. time_expression must be a precise ISO Date string for one_time, or a cron string. action_prompt is what you should do when it triggers.", 
+      parameters: { 
+        type: "object", 
+        properties: { 
+          type: { type: "string", enum: ["one_time", "cron"] },
+          time_expression: { type: "string", description: "ISO Date string (e.g. 2026-05-18T01:30:00+10:00) OR Cron expression" },
+          action_prompt: { type: "string", description: "Instructions for your future self (e.g. 'Ping user about the laundry', 'Check weather')" }
+        }, 
+        required: ["type", "time_expression", "action_prompt"] 
+      } 
+    } 
+  },
+  { type: "function", function: { name: "list_scheduled_tasks", description: "Lists all background tasks mapped to the current chat.", parameters: { type: "object", properties: {} } } },
+  { type: "function", function: { name: "delete_scheduled_task", description: "Deletes a scheduled background task by ID.", parameters: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } } }
 ];
 
 export function getSafeBrainPath(filename: string) {
@@ -43,7 +62,7 @@ export function getSafeBrainPath(filename: string) {
   return safePath;
 }
 
-export async function executeToolLocally(name: string, args: any): Promise<string> {
+export async function executeToolLocally(name: string, args: any, context?: { threadKey: number, chatId: number }): Promise<string> {
   try {
     if (name === "write_file") {
       await fs.writeFile(getSafeBrainPath(args.filename), args.content, "utf8");
@@ -84,6 +103,34 @@ export async function executeToolLocally(name: string, args: any): Promise<strin
       });
       return `Successfully updated light ${result.id}`;
     }
+  if (name === "schedule_task") {
+      if (!context) return "System Error: Missing chat context for scheduling.";
+      const { scheduleNewTask } = await import("./scheduler");
+      const id = crypto.randomUUID().slice(0, 8);
+      scheduleNewTask({
+        id,
+        threadKey: context.threadKey,
+        chatId: context.chatId,
+        type: args.type,
+        timeExpr: args.time_expression,
+        actionPrompt: args.action_prompt
+      });
+      return `Task scheduled successfully. ID: ${id}`;
+    }
+    
+    if (name === "list_scheduled_tasks") {
+      const { DB } = await import("./db");
+      const tasks = DB.getScheduledTasks().filter(t => t.chat_id === context?.chatId);
+      if (tasks.length === 0) return "No scheduled tasks active.";
+      return tasks.map(t => `ID: ${t.id} | Type: ${t.type} | Time: ${t.time_expression} | Action: ${t.action_prompt}`).join("\n");
+    }
+    
+    if (name === "delete_scheduled_task") {
+      const { removeScheduledTask } = await import("./scheduler");
+      removeScheduledTask(args.id);
+      return `Task ${args.id} removed.`;
+    }
+
   } catch (e: any) {
     return `Error: ${e.message}`;
   }
