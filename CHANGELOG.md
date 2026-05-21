@@ -11,6 +11,11 @@ All notable changes to this project will be documented in this file.
 - **Caching-Friendly Time awareness**: Dynamically injects a small, timezone-aware timestamp `[Current Time: YYYY-MM-DDTHH:mm:ss±HH:MM]` directly into incoming user prompts, keeping the system prompt static and preventing prompt caching invalidation/token burn.
 - **Scheduler Timezone Support**: Configured background `Cron` instances in `src/scheduler.ts` to execute tasks in the configured user timezone, preventing time mismatches in containerized deployments.
 - **Auto-Healing Migration**: Added dynamic self-healing configurations on boot that automatically parse, format, and migrate legacy `agent_config.md` files to the new format, preserving any existing user settings.
+- **Dynamic Git-Based Updates**: Created `entrypoint.sh` - a supervisor script that boots the agent, dynamically fetches remote repository states, installs bun dependencies, and executes typescript syntax validation (`tsc --noEmit`).
+- **Robust Rollback Safety**: Configured automatic healing in the bootloader loop to immediately roll back target branches/commits to the last working stable state if type-checking fails or if the agent crash-loops on startup.
+- **Dynamic Branch Switcher (`/branch`)**: Added an interactive Telegram command enabling the owner to query available remote branches and dynamically hot-swap the bot into a separate developer/feature branch for live testing.
+- **Interactive Upgrade (`/update`)**: Added a git-aware update manager command that queries remote changes on the active branch, lists the incoming changelog commit notes, and presents an inline approval keyboard to trigger clean process exits for automatic container restarts.
+- **Git Context Status**: Upgraded `/status` to dynamically include active Git branch name, commit hash, and log message for perfect environment tracking.
 
 ### Fixed
 - **System Prompt Sorting Drift**: Fixed a bug where deleting and re-inserting the system prompt on config/model changes caused it to drift to the end of the history array by enforcing `created_at = 0` database sorting.

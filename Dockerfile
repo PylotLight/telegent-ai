@@ -20,12 +20,16 @@ RUN apt-get update && apt-get install -y \
 
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/src ./src
-COPY --from=builder /app/package.json /app/tsconfig.json ./
+COPY --from=builder /app/package.json /app/tsconfig.json /app/entrypoint.sh ./
+COPY --from=builder /app/.git ./.git
+
+# Ensure the supervisor script is executable
+RUN chmod +x entrypoint.sh
 
 # Create the brain volume point
 RUN mkdir -p /app/brain && chmod 777 /app/brain
 
 ENV NODE_ENV=production
 
-# Execute the agent
-CMD ["bun", "run", "src/index.ts"]
+# Execute the supervisor bootloader instead of the agent directly
+CMD ["/app/entrypoint.sh"]

@@ -12,7 +12,7 @@ class LifxManager {
 
   private async init() {
     try {
-      await this.client.init();
+      await (this.client as any).init();
     } catch (err) {
       console.error("LIFX init error:", err);
       throw err;
@@ -26,12 +26,12 @@ class LifxManager {
   async discoverAndSync() {
     await this.ensureInitialized();
     
-    this.client.startDiscovery();
+    (this.client as any).startDiscovery();
     
     // Wait for discovery window
     await new Promise(resolve => setTimeout(resolve, 3000));
     
-    const lights = this.client.lights();
+    const lights = (this.client as any).lights() as any[];
     for (const light of lights) {
       DB.upsertLight(light.id, light.label, light.address);
     }

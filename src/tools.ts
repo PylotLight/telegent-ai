@@ -77,7 +77,7 @@ export async function executeToolLocally(name: string, args: any, context?: { th
     }
     if (name === "search_openrouter_models") {
       const response = await fetch("https://openrouter.ai/api/v1/models");
-      const data = await response.json();
+      const data = (await response.json()) as any;
       let models = data.data as any[];
       const query = args.query?.toLowerCase() || "";
       

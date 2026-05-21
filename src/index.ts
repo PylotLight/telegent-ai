@@ -49,6 +49,36 @@ async function start() {
   bot.on("callback_query:data", async (ctx) => {
     const data = ctx.callbackQuery.data;
 
+    // Upgrades and Updates handling
+    if (data === "upd:pull") {
+      await ctx.answerCallbackQuery({ text: "Initiating hot-swap upgrade..." });
+      if (ctx.chat && ctx.callbackQuery.message) {
+        await bot.api.editMessageText(
+          ctx.chat.id,
+          ctx.callbackQuery.message.message_id,
+          "⏳ <b>Pulling updates, typechecking, and hot-swapping. Stand by...</b>",
+          { parse_mode: "HTML" }
+        );
+      }
+      setTimeout(() => {
+        process.exit(42);
+      }, 1000);
+      return;
+    }
+
+    if (data === "upd:cancel") {
+      await ctx.answerCallbackQuery({ text: "Upgrade cancelled." });
+      if (ctx.chat && ctx.callbackQuery.message) {
+        await bot.api.editMessageText(
+          ctx.chat.id,
+          ctx.callbackQuery.message.message_id,
+          "❌ <b>Upgrade cancelled.</b>",
+          { parse_mode: "HTML" }
+        );
+      }
+      return;
+    }
+
     // Model Selection
     if (data.startsWith("sm:")) {
       const modelId = data.substring(3);
@@ -75,6 +105,7 @@ async function start() {
 
     // Shell Command Approval
     const [action, cmdId] = data.split(":");
+    if (!action || !cmdId) return;
     const pending = DB.getPendingAction(cmdId);
 
     if (!pending) return ctx.answerCallbackQuery("Expired");

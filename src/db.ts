@@ -100,7 +100,7 @@ export const DB = {
         model_id = COALESCE(?, model_id), 
         persona = COALESCE(?, persona), 
         last_active = COALESCE(?, last_active)
-    `, [threadKey, modelId, persona, lastActive, modelId, persona, lastActive]);
+    `, [threadKey, modelId ?? null, persona ?? null, lastActive ?? null, modelId ?? null, persona ?? null, lastActive ?? null]);
   },
 
   // Message Management
@@ -109,7 +109,7 @@ export const DB = {
   },
   addMessage: (threadKey: number, msg: { role: string, content: string, toolCallId?: string }) => {
     db.run("INSERT INTO messages (thread_key, role, content, tool_call_id, created_at) VALUES (?, ?, ?, ?, ?)", 
-      [threadKey, msg.role, msg.content, msg.toolCallId, Date.now()]);
+      [threadKey, msg.role, msg.content, msg.toolCallId ?? null, Date.now()]);
   },
   clearMessages: (threadKey: number) => {
     db.run("DELETE FROM messages WHERE thread_key = ?", [threadKey]);
@@ -135,8 +135,8 @@ export const DB = {
         completion_tokens = completion_tokens + COALESCE(?, 0), 
         cached_tokens = cached_tokens + COALESCE(?, 0), 
         last_context_size = COALESCE(?, last_context_size)
-    `, [threadKey, requests || 0, promptTokens || 0, completionTokens || 0, cachedTokens || 0, lastContextSize || 0, 
-        requests, promptTokens, completionTokens, cachedTokens, lastContextSize]);
+    `, [threadKey, requests ?? 0, promptTokens ?? 0, completionTokens ?? 0, cachedTokens ?? 0, lastContextSize ?? 0, 
+        requests ?? null, promptTokens ?? null, completionTokens ?? null, cachedTokens ?? null, lastContextSize ?? null]);
   },
 
   // NEW: Log Method

@@ -6,7 +6,6 @@ import { State } from "./state";
 import { AGENT_TOOLS, executeToolLocally } from "./tools";
 import { DB } from "./db";
 import { withRetry } from "./resilience";
-import { escape } from "telegram-markdown-v2";
 
 const CONTEXT_TOKEN_LIMIT = 100000;
 
@@ -14,25 +13,12 @@ function approximateTokenCount(messages: any[]): number {
   return messages.reduce((acc, msg) => acc + (msg.content?.length || 0) / 4, 0);
 }
 
-function formatAgentResponse(content: string): string {
-  // Convert basic ** to *
-  let txt = content.replace(/\*\*(.*?)\*\*/g, '*$1*');
-  // Telegram Markdown V2 demands escaping of specific characters outside of codeblocks.
-  // A safe regex that avoids breaking codeblocks entirely is complex, so we rely on 
-  // the model's instructions in config.ts, but we forcefully escape common breaking characters
-  // like [ ] ( ) ~ > # + - = | { } . !
-  // For production, using parse_mode: "HTML" and an MD->HTML parser is usually 100x more stable,
-  // but to adhere to the MarkdownV2 constraint safely:
-  txt = txt.replace(/(?<!\\)([>#\+\-\|{}\.!])/g, '\\$1');
-  return txt;
-}
-
 function mdToHTML(text: string): string {
   if (!text) return text;
   let html = text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
   html = html.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>'); // Bold
   html = html.replace(/\*(.*?)\*/g, '<i>$1</i>'); // Italic fallback
   html = html.replace(/_(.*?)_/g, '<i>$1</i>'); // Italic
@@ -124,7 +110,7 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
 
       try {
         DB.log("INFO", `Sending request to model ${model} with ${messagesForAPI.length} messages`);
-        
+
         completion = await withRetry(async () => {
           // LIVE STREAMING REQUEST
           const stream = await openai.chat.completions.create({
@@ -154,7 +140,7 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
               if (now - lastEditTime > 1500) {
                 const display = fullContent.length > 4000 ? fullContent.slice(-4000) : fullContent;
                 // No parse_mode while streaming to prevent half-baked tags from crashing API
-                safeEditMessage(bot, chatId, statusMsgId, "💭 " + display).catch(()=>{});
+                safeEditMessage(bot, chatId, statusMsgId, "💭 " + display).catch(() => { });
                 lastEditTime = now;
               }
             }
@@ -174,7 +160,7 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
           }
 
           const validToolCalls = toolCalls.filter(Boolean);
-          
+
           return {
             usage: finalUsage,
             choices: [{
@@ -222,7 +208,7 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
                 messages: messagesForAPI as any,
                 tools: AGENT_TOOLS as any,
               });
-              if (result && result.error) throw new Error(result.error.message || JSON.stringify(result.error));
+              if (result && (result as any).error) throw new Error((result as any).error.message || JSON.stringify((result as any).error));
               if (!result || !result.choices || result.choices.length === 0) {
                 throw new Error(`Model returned an empty or invalid response.`);
               }
@@ -260,7 +246,7 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
       }
 
       const msg = completion.choices[0].message;
-      DB.addMessage(threadKey, { role: msg.role, content: msg.content || "", toolCallId: msg.tool_calls?.[0]?.id }); 
+      DB.addMessage(threadKey, { role: msg.role, content: msg.content || "", toolCallId: msg.tool_calls?.[0]?.id });
       history.push(msg);
 
       if (!msg.tool_calls || msg.tool_calls.length === 0) {
