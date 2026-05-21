@@ -1,6 +1,6 @@
 import { Bot, InlineKeyboard } from "grammy";
 import { State } from "./state";
-import { getSystemPrompt, agentConfig } from "./config";
+import { getSystemPrompt, agentConfig, getLocalISOString } from "./config";
 import { runAgent } from "./agent";
 import { DB } from "./db";
 
@@ -114,7 +114,13 @@ export async function processUserMessage(bot: Bot, prompt: string, threadKey: nu
     DB.updateSystemPrompt(threadKey, systemPrompt);
     DB.upsertStats(threadKey, { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, lastContextSize: 0 });
   }
-  DB.addMessage(threadKey, { role: "user", content: prompt });
+
+  // Inject current time transparently into the user message content stored in DB.
+  // This keeps the system prompt static for perfect caching, but gives real-time awareness!
+  const localTimeStr = getLocalISOString(agentConfig.timezone);
+  const timeAwarePrompt = `${prompt}\n\n[Current Time: ${localTimeStr}]`;
+
+  DB.addMessage(threadKey, { role: "user", content: timeAwarePrompt });
   const statusMsg = await bot.api.sendMessage(chatId, `🤔 <i>Thinking...</i>`, { parse_mode: "HTML", message_thread_id: threadKey });
   await runAgent(bot, threadKey, chatId, statusMsg.message_id);
 }

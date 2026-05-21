@@ -116,8 +116,8 @@ export const DB = {
   },
   updateSystemPrompt: (threadKey: number, content: string) => {
     db.run("DELETE FROM messages WHERE thread_key = ? AND role = 'system'", [threadKey]);
-    db.run("INSERT INTO messages (thread_key, role, content, created_at) VALUES (?, 'system', ?, ?)", 
-      [threadKey, content, Date.now()]);
+    db.run("INSERT INTO messages (thread_key, role, content, created_at) VALUES (?, 'system', ?, 0)", 
+      [threadKey, content]);
   },
 
   // Stats Management

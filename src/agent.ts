@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { Bot, InlineKeyboard } from "grammy";
 import crypto from "node:crypto";
-import { OPENROUTER_API_KEY } from "./config";
+import { OPENROUTER_API_KEY, getSystemPrompt, loadAgentConfig } from "./config";
 import { State } from "./state";
 import { AGENT_TOOLS, executeToolLocally } from "./tools";
 import { DB } from "./db";
@@ -66,6 +66,12 @@ async function safeEditMessage(bot: Bot, chatId: number, messageId: number, text
 
 export async function runAgent(bot: Bot, threadKey: number, chatId: number, statusMsgId: number) {
   DB.log("INFO", `Starting runAgent for thread ${threadKey}`);
+
+  // Reload config and refresh system prompt dynamically (keeps it sorted at index 0 with created_at = 0)
+  await loadAgentConfig();
+  const updatedPrompt = await getSystemPrompt(threadKey);
+  DB.updateSystemPrompt(threadKey, updatedPrompt);
+
   let history = DB.getMessages(threadKey);
 
   if (approximateTokenCount(history) > CONTEXT_TOKEN_LIMIT) {

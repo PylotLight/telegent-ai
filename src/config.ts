@@ -18,6 +18,8 @@ export let agentConfig = {
   primaryTools: ["execute_shell_command", "write_file", "read_file", "list_brain_files", "search_openrouter_models"],
   safetyProtocols: "Always ask for user approval before running execute_shell_command. Avoid destructive commands.",
   maxTokenWarning: 150000,
+  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+  systemPromptTemplate: "",
 };
 
 export async function ensureBrainDir() {
@@ -82,32 +84,71 @@ export async function initSecrets() {
   }, null, 2));
 }
 
-export async function loadAgentConfig() {
+export function getTimezoneOffset(timeZone: string, date: Date = new Date()): string {
   try {
-    const content = await fs.readFile(CONFIG_FILE, "utf-8");
-    agentConfig.persona = content.match(/Persona: (.*)/)?.[1] || agentConfig.persona;
-    agentConfig.preferredLanguage = content.match(/Preferred Language: (.*)/)?.[1] || agentConfig.preferredLanguage;
-    agentConfig.defaultScriptingLanguage = content.match(/Default Scripting Language: (.*)/)?.[1] || agentConfig.defaultScriptingLanguage;
-    const warningMatch = content.match(/Max Context Warning: (\d+)/)?.[1];
-    if (warningMatch) agentConfig.maxTokenWarning = parseInt(warningMatch, 10);
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      timeZoneName: "longOffset"
+    }).formatToParts(date);
+    const tzName = parts.find(p => p.type === "timeZoneName")?.value || "";
+    if (tzName === "GMT") return "+00:00";
+    return tzName.replace("GMT", "");
+  } catch {
+    return "+00:00";
+  }
+}
+
+export function getLocalISOString(timeZone: string, date: Date = new Date()): string {
+  try {
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false
+    });
+    const parts = formatter.formatToParts(date);
+    const year = parts.find(p => p.type === "year")?.value;
+    const month = parts.find(p => p.type === "month")?.value;
+    const day = parts.find(p => p.type === "day")?.value;
+    let hour = parts.find(p => p.type === "hour")?.value || "00";
+    const minute = parts.find(p => p.type === "minute")?.value;
+    const second = parts.find(p => p.type === "second")?.value;
+    if (hour === "24") hour = "00";
+    const offset = getTimezoneOffset(timeZone, date);
+    return `${year}-${month}-${day}T${hour}:${minute}:${second}${offset}`;
+  } catch {
+    return date.toISOString();
+  }
+}
+
+export async function loadAgentConfig() {
+  let content = "";
+  try {
+    content = await fs.readFile(CONFIG_FILE, "utf-8");
   } catch (e) {
-    await fs.writeFile(CONFIG_FILE, `# Agent Configuration
+    // If config file doesn't exist, create it with all defaults
+    content = `# Agent Configuration
 Persona: ${agentConfig.persona}
 Preferred Language: ${agentConfig.preferredLanguage}
 Default Scripting Language: ${agentConfig.defaultScriptingLanguage}
 Max Context Warning: ${agentConfig.maxTokenWarning}
-Safety Protocols: ${agentConfig.safetyProtocols}`.trim(), "utf-8");
-  }
-}
+Safety Protocols: ${agentConfig.safetyProtocols}
+Timezone: ${agentConfig.timezone}
 
-export async function getSystemPrompt(threadKey: number) {
-  return `You are a ${agentConfig.persona}.
-Your workspace is '${BRAIN_DIR}'. You primarily use ${agentConfig.defaultScriptingLanguage}.
-Your safety protocols: ${agentConfig.safetyProtocols}.
+## System Prompt Instructions
+You are a {{persona}}.
+Your workspace is '{{workspace}}'. You primarily use {{language}}.
+Your safety protocols: {{safety}}.
+Timezone: {{timezone}}
+(Note: You can check the current time for each message in the time context appended to the user's message.)
 
 FORMATTING:
 - Use standard markdown (e.g. **bold**, *italic*, \`code\`).
-- To tag or ping the owner, use: [{username}](tg://user?id=${MY_TELEGRAM_ID})
+- To tag or ping the owner, use: [{username}](tg://user?id={{owner_id}})
 
 If you build a tool:
 1. Use 'write_file' to save it to './brain'.
@@ -116,4 +157,66 @@ If you build a tool:
 To run commands on the host system when necessary:
 - Use \`chroot /host\` to execute binaries on the host.
 - Use \`nsenter -t 1 -m -u -n -i\` to run commands in the host's namespaces (PID, mount, UTS, network, IPC).`;
+
+    await fs.writeFile(CONFIG_FILE, content.trim(), "utf-8");
+  }
+
+  // Parse keys
+  agentConfig.persona = content.match(/Persona: (.*)/)?.[1]?.trim() || agentConfig.persona;
+  agentConfig.preferredLanguage = content.match(/Preferred Language: (.*)/)?.[1]?.trim() || agentConfig.preferredLanguage;
+  agentConfig.defaultScriptingLanguage = content.match(/Default Scripting Language: (.*)/)?.[1]?.trim() || agentConfig.defaultScriptingLanguage;
+  const warningMatch = content.match(/Max Context Warning: (\d+)/)?.[1];
+  if (warningMatch) agentConfig.maxTokenWarning = parseInt(warningMatch, 10);
+  agentConfig.timezone = content.match(/Timezone: (.*)/)?.[1]?.trim() || agentConfig.timezone;
+  agentConfig.safetyProtocols = content.match(/Safety Protocols: (.*)/)?.[1]?.trim() || agentConfig.safetyProtocols;
+
+  // Handle system prompt section parsing & self-healing migrations
+  let hasChanges = false;
+
+  // 1. Ensure Timezone key exists in the file keys section
+  if (!content.includes("Timezone:")) {
+    // Find where to insert Timezone - right after Safety Protocols
+    const safetyIndex = content.indexOf("Safety Protocols:");
+    if (safetyIndex !== -1) {
+      const lineEnd = content.indexOf("\n", safetyIndex);
+      content = content.slice(0, lineEnd) + `\nTimezone: ${agentConfig.timezone}` + content.slice(lineEnd);
+    } else {
+      content = `Timezone: ${agentConfig.timezone}\n` + content;
+    }
+    hasChanges = true;
+  }
+
+  // 2. Parse or migrate system prompt section
+  const promptParts = content.split(/## System Prompt Instructions\r?\n/);
+  if (promptParts[1]) {
+    agentConfig.systemPromptTemplate = promptParts[1].trim();
+  } else {
+    // Migrate: Append system prompt section
+    const defaultPromptSection = `\n\n## System Prompt Instructions\nYou are a {{persona}}.\nYour workspace is '{{workspace}}'. You primarily use {{language}}.\nYour safety protocols: {{safety}}.\nTimezone: {{timezone}}\n(Note: You can check the current time for each message in the time context appended to the user's message.)\n\nFORMATTING:\n- Use standard markdown (e.g. **bold**, *italic*, \\\`code\\\`).\n- To tag or ping the owner, use: [{username}](tg://user?id={{owner_id}})\n\nIf you build a tool:\n1. Use 'write_file' to save it to './brain'.\n2. Use 'execute_shell_command' to run it.\n\nTo run commands on the host system when necessary:\n- Use \\\`chroot /host\\\` to execute binaries on the host.\n- Use \\\`nsenter -t 1 -m -u -n -i\\\` to run commands in the host's namespaces (PID, mount, UTS, network, IPC).`;
+    content = content.trim() + defaultPromptSection;
+    const migratedParts = defaultPromptSection.split(/## System Prompt Instructions\r?\n/);
+    agentConfig.systemPromptTemplate = (migratedParts[1] || "").trim();
+    hasChanges = true;
+  }
+
+  if (hasChanges) {
+    await fs.writeFile(CONFIG_FILE, content, "utf-8");
+  }
+}
+
+export async function getSystemPrompt(threadKey: number) {
+  let template = agentConfig.systemPromptTemplate;
+  if (!template) {
+    await loadAgentConfig();
+    template = agentConfig.systemPromptTemplate;
+  }
+
+  // Substitute static placeholders (safe for caching!)
+  return template
+    .replace(/{{persona}}/g, agentConfig.persona)
+    .replace(/{{workspace}}/g, BRAIN_DIR)
+    .replace(/{{language}}/g, agentConfig.defaultScriptingLanguage)
+    .replace(/{{safety}}/g, agentConfig.safetyProtocols)
+    .replace(/{{owner_id}}/g, MY_TELEGRAM_ID.toString())
+    .replace(/{{timezone}}/g, agentConfig.timezone);
 }   

@@ -2,6 +2,7 @@ import { Cron } from "croner";
 import { Bot } from "grammy";
 import { DB } from "./db";
 import { processUserMessage } from "./commands";
+import { agentConfig } from "./config";
 
 const jobs = new Map<string, Cron>();
 let activeBot: Bot | null = null;
@@ -36,7 +37,12 @@ export function startJob(task: any) {
   }
   
   try {
-    const job = new Cron(triggerTime, async () => {
+    const options: { timezone?: string } = {};
+    if (typeof triggerTime === "string") {
+      options.timezone = agentConfig.timezone;
+    }
+
+    const job = new Cron(triggerTime, options, async () => {
       if (!activeBot) return;
       DB.upsertThread(task.thread_key, { lastActive: Date.now() });
       
