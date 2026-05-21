@@ -47,7 +47,8 @@ class LifxManager {
   }) {
     await this.ensureInitialized();
     
-    const light = this.client.getLight(id);
+    // CHANGED: getLight(id) -> light(id)
+    const light = this.client.light(id);
     if (!light) {
       throw new Error(`Light with ID ${id} not found`);
     }
