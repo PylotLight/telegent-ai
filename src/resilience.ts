@@ -6,9 +6,10 @@ export const INITIAL_BACKOFF_MS = 1000;
 export const RETRYABLE_STATUS_CODES = [429, 500, 502, 503, 504];
 
 export const FALLBACK_MODELS = [
-  "anthropic/claude-3.5-sonnet",
-  "openai/gpt-4o-mini",
-  "google/gemini-flash-1.5"
+  "nvidia/nemotron-3-super-120b-a12b:free",
+  "nvidia/nemotron-3-nano-30b-a3b:free",
+  "google/gemma-4-31b-it:free",
+  "google/gemma-4-26b-a4b-it:free"
 ];
 
 export async function withRetry<T>(
