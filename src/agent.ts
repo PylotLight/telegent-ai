@@ -12,20 +12,43 @@ const CONTEXT_TOKEN_LIMIT = 100000;
 function approximateTokenCount(messages: any[]): number {
   return messages.reduce((acc, msg) => acc + (msg.content?.length || 0) / 4, 0);
 }
-
 function mdToHTML(text: string): string {
   if (!text) return text;
-  let html = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-  html = html.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>'); // Bold
-  html = html.replace(/\*(.*?)\*/g, '<i>$1</i>'); // Italic fallback
-  html = html.replace(/_(.*?)_/g, '<i>$1</i>'); // Italic
-  html = html.replace(/```(?:[a-z]+)?\n([\s\S]*?)```/g, '<pre><code>$1</code></pre>'); // Code blocks
-  html = html.replace(/`(.*?)`/g, '<code>$1</code>'); // Inline code
-  html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2">$1</a>'); // Links & Tagging
-  return html;
+
+  // 1. Protect code blocks (Markdown) to avoid escaping their content as markdown
+  const codeBlocks: string[] = [];
+  let processed = text.replace(/```(?:[a-z]+)?\n([\s\S]*?)```/g, (match, content) => {
+    const id = `__CODE_BLOCK_${codeBlocks.length}__`;
+    const escaped = content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    codeBlocks.push(`<pre><code>${escaped}</code></pre>`);
+    return id;
+  });
+
+  // 2. Escape HTML, but allow specific tags that the LLM might use for formatting (like <pre> for tables)
+  processed = processed.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  const allowedTags = ['b', 'i', 'code', 'pre', 'a', 'strong', 'em', 'u', 's', 'del'];
+  allowedTags.forEach(tag => {
+    // Unescape <tag> and </tag>
+    const openTag = new RegExp(`&lt;${tag}(?:\\s+[^&gt;]*)?&gt;`, 'gi');
+    const closeTag = new RegExp(`&lt;\\/${tag}&gt;`, 'gi');
+    processed = processed.replace(openTag, (match) => match.replace(/&lt;/g, '<').replace(/&gt;/g, '>'));
+    processed = processed.replace(closeTag, (match) => match.replace(/&lt;/g, '<').replace(/&gt;/g, '>'));
+  });
+
+  // 3. Convert Markdown to HTML
+  processed = processed.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>'); // Bold
+  processed = processed.replace(/\*(.*?)\*/g, '<i>$1</i>'); // Italic
+  processed = processed.replace(/_(.*?)_/g, '<i>$1</i>'); // Italic
+  processed = processed.replace(/`(.*?)`/g, '<code>$1</code>'); // Inline code
+  processed = processed.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2">$1</a>'); // Links & Tagging
+
+  // 4. Restore code blocks
+  codeBlocks.forEach((block, i) => {
+    processed = processed.replace(`__CODE_BLOCK_${i}__`, block);
+  });
+
+  return processed;
 }
 
 function getOpenRouterClient() {
@@ -196,9 +219,8 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
         let fallbackAttempted = false;
         for (const fallbackModel of fallbackModels) {
           if (fallbackModel === model) continue; // Skip the current model
-
-          DB.log("WARN", `Switching to fallback model: ${fallbackModel}`);
-          await safeEditMessage(bot, chatId, statusMsgId, `🔄 *Model error. Retrying with fallback...*`, { parse_mode: "Markdown" });
+           DB.log("WARN", `Switching to fallback model: ${fallbackModel}`);
+           await safeEditMessage(bot, chatId, statusMsgId, `🔄 <i>Model error. Retrying with fallback...</i>`, { parse_mode: "HTML" });
 
           try {
             // Use the same retry logic with the fallback model
