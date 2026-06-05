@@ -147,12 +147,11 @@ export async function executeToolLocally(name: string, args: any, context?: { th
       
       const ttsDir = path.join(BRAIN_DIR, "tts");
       await fs.mkdir(ttsDir, { recursive: true });
-      
       const ttsClient = new OpenAI({
-        baseURL: TTS_ENDPOINT,
-        apiKey: TTS_API_KEY,
+        baseURL: TTS_ENDPOINT.endsWith('/v1') ? TTS_ENDPOINT : `${TTS_ENDPOINT}/v1`,
+        apiKey: TTS_API_KEY || "not-needed",
       });
-      
+
       try {
         const mp3 = await ttsClient.audio.speech.create({
           model: "tts-1",

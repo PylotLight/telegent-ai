@@ -298,10 +298,11 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
           break; // break out of the loop because we need approval
         } else {
           DB.log("INFO", `Executing tool: ${tool.function.name}`);
-          const result = await executeToolLocally(tool.function.name, args, { threadKey, chatId });
-          toolResults.push({ tool_call_id: tool.id, content: result });
-          executedToolsInLoop.push(tool.function.name);
-            DB.log("INFO", `Tool ${tool.function.name} completed with result: ${(result || "").substring(0, 100)}`); // truncate to 100 chars
+            const result = await executeToolLocally(tool.function.name, args, { threadKey, chatId });
+            toolResults.push({ tool_call_id: tool.id, content: result });
+            executedToolsInLoop.push(tool.function.name);
+            const resultStr = typeof result === 'string' ? result : JSON.stringify(result);
+            DB.log("INFO", `Tool ${tool.function.name} completed with result: ${(resultStr || "").substring(0, 100)}`); // truncate to 100 chars
             // Update chat with progress
             
             if (typeof result === "object" && result.audio_file) {
