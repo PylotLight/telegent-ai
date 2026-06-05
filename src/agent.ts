@@ -267,7 +267,7 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
 
       if (!msg.tool_calls || msg.tool_calls.length === 0) {
         const finalHtml = mdToHTML(msg.content || "Done.");
-        await bot.api.sendMessage(chatId, finalHtml, { parse_mode: "HTML" });
+        await bot.api.sendMessage(chatId, finalHtml, { parse_mode: "HTML", message_thread_id: threadKey });
         return;
       }
 
@@ -306,10 +306,10 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
             
             if (typeof result === "object" && result.audio_file) {
               await bot.api.sendAudio(chatId, result.audio_file);
-              await bot.api.sendMessage(chatId, `🔊 <i>Audio response sent.</i>`, { parse_mode: "HTML" });
+              await bot.api.sendMessage(chatId, `🔊 <i>Audio response sent.</i>`, { parse_mode: "HTML", message_thread_id: threadKey });
               await fs.unlink(result.audio_file).catch(() => { });
             } else {
-              await bot.api.sendMessage(chatId, `🔧 <b>Tool Executed:</b> <code>${tool.function.name}</code>\n\n📄 <b>Result:</b>\n<pre><code>${(result || "").slice(0, 2000)}</code></pre>`, { parse_mode: "HTML" });
+              await bot.api.sendMessage(chatId, `🔧 <b>Tool Executed:</b> <code>${tool.function.name}</code>\n\n📄 <b>Result:</b>\n<pre><code>${(result || "").slice(0, 2000)}</code></pre>`, { parse_mode: "HTML", message_thread_id: threadKey });
             }
         }
       }
@@ -329,18 +329,18 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
         const cmdId = crypto.randomUUID().slice(0, 8);
         DB.setPendingAction(cmdId, { threadKey, chatId, statusMsgId, toolCallId: pendingShellTool.id, command: pendingShellCommand });
         const kb = new InlineKeyboard().text("✅ Approve", `approve:${cmdId}`).text("❌ Reject", `reject:${cmdId}`);
-        await bot.api.sendMessage(chatId, `🛠️ <b>Requires Approval:</b>\n<pre><code>${pendingShellCommand}</code></pre>`, { parse_mode: "HTML", reply_markup: kb });
+        await bot.api.sendMessage(chatId, `🛠️ <b>Requires Approval:</b>\n<pre><code>${pendingShellCommand}</code></pre>`, { parse_mode: "HTML", reply_markup: kb, message_thread_id: threadKey });
         return;
       }
 
       // ENHANCED VISIBILITY: List the tools that were just run
       const toolList = runningTools.join(", ");
-      await bot.api.sendMessage(chatId, `🔄 <i>Executed: <code>${toolList}</code>. Continuing thought...</i>`, { parse_mode: "HTML" });
+      await bot.api.sendMessage(chatId, `🔄 <i>Executed: <code>${toolList}</code>. Continuing thought...</i>`, { parse_mode: "HTML", message_thread_id: threadKey });
     }
     // If loop finishes without return
-    await bot.api.sendMessage(chatId, `⚠️ <i>Agent hit maximum thought loops (5).</i>`, { parse_mode: "HTML" });
+    await bot.api.sendMessage(chatId, `⚠️ <i>Agent hit maximum thought loops (5).</i>`, { parse_mode: "HTML", message_thread_id: threadKey });
   } catch (globalError: any) {
     DB.log("CRITICAL", `runAgent Global Error: ${globalError.message}`);
-    await bot.api.sendMessage(chatId, `❌ <b>Internal Agent Error:</b>\n<pre><code>${globalError.message}</code></pre>`, { parse_mode: "HTML" });
+    await bot.api.sendMessage(chatId, `❌ <b>Internal Agent Error:</b>\n<pre><code>${globalError.message}</code></pre>`, { parse_mode: "HTML", message_thread_id: threadKey });
   }
 }
