@@ -17,7 +17,7 @@ function mdToHTML(text: string): string {
 
   // 1. Protect code blocks (Markdown) to avoid escaping their content as markdown
   const codeBlocks: string[] = [];
-  let processed = text.replace(/```(?:[a-z]+)?\n([\s\S]*?)```/g, (match, content) => {
+  let processed = text.replace(/```(?:[a-z]+)?\s*([\s\S]*?)```/g, (match, content) => {
     const id = `__CODE_BLOCK_${codeBlocks.length}__`;
     const escaped = content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     codeBlocks.push(`<pre><code>${escaped}</code></pre>`);
@@ -26,15 +26,6 @@ function mdToHTML(text: string): string {
 
   // 2. Escape HTML, but allow specific tags that the LLM might use for formatting (like <pre> for tables)
   processed = processed.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-  const allowedTags = ['b', 'i', 'code', 'pre', 'a', 'strong', 'em', 'u', 's', 'del'];
-  allowedTags.forEach(tag => {
-    // Unescape <tag> and </tag>
-    const openTag = new RegExp(`&lt;${tag}(?:\\s+[^&gt;]*)?&gt;`, 'gi');
-    const closeTag = new RegExp(`&lt;\\/${tag}&gt;`, 'gi');
-    processed = processed.replace(openTag, (match) => match.replace(/&lt;/g, '<').replace(/&gt;/g, '>'));
-    processed = processed.replace(closeTag, (match) => match.replace(/&lt;/g, '<').replace(/&gt;/g, '>'));
-  });
 
   // 3. Convert Markdown to HTML
   processed = processed.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>'); // Bold
