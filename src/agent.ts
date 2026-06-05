@@ -1,9 +1,10 @@
 import OpenAI from "openai";
 import { Bot, InlineKeyboard } from "grammy";
 import crypto from "node:crypto";
+import fs from "node:fs/promises";
 import { OPENROUTER_API_KEY, getSystemPrompt, loadAgentConfig } from "./config";
 import { State } from "./state";
-import { AGENT_TOOLS, executeToolLocally } from "./tools";
+import { AGENT_TOOLS, TTS_TOOL, executeToolLocally } from "./tools";
 import { DB } from "./db";
 import { withRetry } from "./resilience";
 
@@ -262,6 +263,8 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
       DB.addMessage(threadKey, { role: msg.role, content: msg.content || "", toolCallId: msg.tool_calls?.[0]?.id });
       history.push(msg);
 
+      const allTools = [...AGENT_TOOLS, TTS_TOOL];
+
       if (!msg.tool_calls || msg.tool_calls.length === 0) {
         const finalHtml = mdToHTML(msg.content || "Done.");
         await bot.api.sendMessage(chatId, finalHtml, { parse_mode: "HTML" });
@@ -300,8 +303,14 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
           executedToolsInLoop.push(tool.function.name);
             DB.log("INFO", `Tool ${tool.function.name} completed with result: ${(result || "").substring(0, 100)}`); // truncate to 100 chars
             // Update chat with progress
-            const toolList = executedToolsInLoop.join(", ");
-            await bot.api.sendMessage(chatId, `🔧 <b>Tool Executed:</b> <code>${tool.function.name}</code>\n\n📄 <b>Result:</b>\n<pre><code>${(result || "").slice(0, 2000)}</code></pre>`, { parse_mode: "HTML" });
+            
+            if (typeof result === "object" && result.audio_file) {
+              await bot.api.sendAudio(chatId, result.audio_file);
+              await bot.api.sendMessage(chatId, `🔊 <i>Audio response sent.</i>`, { parse_mode: "HTML" });
+              await fs.unlink(result.audio_file).catch(() => { });
+            } else {
+              await bot.api.sendMessage(chatId, `🔧 <b>Tool Executed:</b> <code>${tool.function.name}</code>\n\n📄 <b>Result:</b>\n<pre><code>${(result || "").slice(0, 2000)}</code></pre>`, { parse_mode: "HTML" });
+            }
         }
       }
 // If we have executed any non-shell tools, update the chat to show we are done with tool execution

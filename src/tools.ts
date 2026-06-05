@@ -3,6 +3,7 @@ import path from "node:path";
 import { BRAIN_DIR } from "./config";
 import { lifxManager } from "./lifx";
 import crypto from "node:crypto";
+import OpenAI from "openai";
 
 export const AGENT_TOOLS = [
   { type: "function", function: { name: "execute_shell_command", description: "Executes a shell command. Requires approval.", parameters: { type: "object", properties: { command: { type: "string" } }, required: ["command"] } } },
@@ -53,8 +54,17 @@ export const AGENT_TOOLS = [
     } 
   },
   { type: "function", function: { name: "list_scheduled_tasks", description: "Lists all background tasks mapped to the current chat.", parameters: { type: "object", properties: {} } } },
-  { type: "function", function: { name: "delete_scheduled_task", description: "Deletes a scheduled background task by ID.", parameters: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } } }
+  { type: "function", function: { name: "delete_scheduled_task", description: "Deletes a scheduled background task by ID.", parameters: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } } },
 ];
+
+export const TTS_TOOL = {
+  type: "function",
+  function: {
+    name: "send_audio_response",
+    description: "Converts the previous assistant message into audio and sends it to the user. Use this when the user specifically asks for audio or when a short, audible notification is appropriate.",
+    parameters: { type: "object", properties: { text: { type: "string", description: "The text to convert to speech. If omitted, the most recent assistant response is used." } }, required: [] }
+  }
+};
 
 export function getSafeBrainPath(filename: string) {
   const safePath = path.normalize(path.join(BRAIN_DIR, filename));
@@ -62,7 +72,7 @@ export function getSafeBrainPath(filename: string) {
   return safePath;
 }
 
-export async function executeToolLocally(name: string, args: any, context?: { threadKey: number, chatId: number }): Promise<string> {
+export async function executeToolLocally(name: string, args: any, context?: { threadKey: number, chatId: number }): Promise<any> {
   try {
     if (name === "write_file") {
       await fs.writeFile(getSafeBrainPath(args.filename), args.content, "utf8");
@@ -103,7 +113,7 @@ export async function executeToolLocally(name: string, args: any, context?: { th
       });
       return `Successfully updated light ${result.id}`;
     }
-  if (name === "schedule_task") {
+    if (name === "schedule_task") {
       if (!context) return "System Error: Missing chat context for scheduling.";
       const { scheduleNewTask } = await import("./scheduler");
       const id = crypto.randomUUID().slice(0, 8);
@@ -130,7 +140,37 @@ export async function executeToolLocally(name: string, args: any, context?: { th
       removeScheduledTask(args.id);
       return `Task ${args.id} removed.`;
     }
-
+    
+    if (name === "send_audio_response") {
+      const { TTS_ENDPOINT, TTS_API_KEY, TTS_VOICE } = await import("./config");
+      if (!TTS_ENDPOINT) return "System Error: TTS endpoint not configured.";
+      
+      const ttsDir = path.join(BRAIN_DIR, "tts");
+      await fs.mkdir(ttsDir, { recursive: true });
+      
+      const ttsClient = new OpenAI({
+        baseURL: TTS_ENDPOINT,
+        apiKey: TTS_API_KEY,
+      });
+      
+      try {
+        const mp3 = await ttsClient.audio.speech.create({
+          model: "tts-1",
+          voice: TTS_VOICE,
+          input: args.text || "No text provided for audio response.",
+          response_format: "opus",
+        });
+        
+        const buffer = Buffer.from(await mp3.arrayBuffer());
+        const filename = `tts_${crypto.randomUUID().slice(0, 8)}.opus`;
+        const filepath = path.join(ttsDir, filename);
+        await fs.writeFile(filepath, buffer);
+        return { audio_file: filepath };
+      } catch (e: any) {
+        return `TTS Error: ${e.message}`;
+      }
+    }
+    
   } catch (e: any) {
     return `Error: ${e.message}`;
   }

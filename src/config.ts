@@ -10,6 +10,9 @@ export let TELEGRAM_TOKEN = "";
 export let OPENROUTER_API_KEY = "";
 export let MY_TELEGRAM_ID = 0;
 export let DEFAULT_MODEL = "openrouter/free";
+export let TTS_ENDPOINT = "";
+export let TTS_API_KEY = "";
+export let TTS_VOICE = "alloy";
 
 export let agentConfig = {
   persona: "General AI Assistant",
@@ -36,14 +39,18 @@ export async function initSecrets() {
     OPENROUTER_API_KEY = data.OPENROUTER_API_KEY || "";
     MY_TELEGRAM_ID = data.MY_TELEGRAM_ID || 0;
     DEFAULT_MODEL = data.DEFAULT_MODEL || DEFAULT_MODEL;
+    TTS_ENDPOINT = data.TTS_ENDPOINT || "";
+    TTS_API_KEY = data.TTS_API_KEY || "";
   }
 
   // 2. Check process.env for overrides/fallbacks
   TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || TELEGRAM_TOKEN;
-  OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || OPENROUTER_API_KEY;
-  const envTelegramId = parseInt(process.env.MY_TELEGRAM_ID || "0", 10);
-  if (envTelegramId) MY_TELEGRAM_ID = envTelegramId;
-  DEFAULT_MODEL = process.env.DEFAULT_MODEL || DEFAULT_MODEL;
+    OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || OPENROUTER_API_KEY;
+    const envTelegramId = parseInt(process.env.MY_TELEGRAM_ID || "0", 10);
+    if (envTelegramId) MY_TELEGRAM_ID = envTelegramId;
+    DEFAULT_MODEL = process.env.DEFAULT_MODEL || DEFAULT_MODEL;
+    TTS_ENDPOINT = process.env.TTS_ENDPOINT || TTS_ENDPOINT;
+    TTS_API_KEY = process.env.TTS_API_KEY || TTS_API_KEY;
 
   // 3. Helper to detect if a value is still a placeholder or empty
   const isPlaceholder = (val: string) => !val || val.includes("YOUR_");
@@ -66,12 +73,13 @@ export async function initSecrets() {
     console.error(`\n❌ Configuration is missing or still using placeholder values!`);
     console.error(`🛠️  Please edit the file at:`);
     console.error(`👉 ${SECRETS_FILE}\n`);
-    
     await fs.writeFile(SECRETS_FILE, JSON.stringify({
       TELEGRAM_TOKEN: TELEGRAM_TOKEN || "YOUR_TELEGRAM_BOT_TOKEN_HERE",
       OPENROUTER_API_KEY: OPENROUTER_API_KEY || "YOUR_OPENROUTER_API_KEY_HERE",
       MY_TELEGRAM_ID: MY_TELEGRAM_ID || 123456789,
-      DEFAULT_MODEL: DEFAULT_MODEL
+      DEFAULT_MODEL: DEFAULT_MODEL,
+      TTS_ENDPOINT: TTS_ENDPOINT || "http://your-nas-ip:port/v1",
+      TTS_API_KEY: TTS_API_KEY || ""
     }, null, 2));
     
     console.error("🛑 Exiting. Update the secrets.json file and restart.\n");
@@ -80,7 +88,7 @@ export async function initSecrets() {
 
   // Save the merged/valid config
   await fs.writeFile(SECRETS_FILE, JSON.stringify({
-    TELEGRAM_TOKEN, OPENROUTER_API_KEY, MY_TELEGRAM_ID, DEFAULT_MODEL
+    TELEGRAM_TOKEN, OPENROUTER_API_KEY, MY_TELEGRAM_ID, DEFAULT_MODEL, TTS_ENDPOINT, TTS_API_KEY
   }, null, 2));
 }
 
