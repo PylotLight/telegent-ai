@@ -1,7 +1,8 @@
 import OpenAI from "openai";
-import { Bot, InlineKeyboard } from "grammy";
+import { Bot, InlineKeyboard, InputFile } from "grammy";
 import crypto from "node:crypto";
-import fs from "node:fs/promises";
+import * as fs from "node:fs";
+import fsp from "node:fs/promises";
 import { OPENROUTER_API_KEY, getSystemPrompt, loadAgentConfig } from "./config";
 import { State } from "./state";
 import { AGENT_TOOLS, TTS_TOOL, executeToolLocally } from "./tools";
@@ -211,8 +212,8 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
         let fallbackAttempted = false;
         for (const fallbackModel of fallbackModels) {
           if (fallbackModel === model) continue; // Skip the current model
-           DB.log("WARN", `Switching to fallback model: ${fallbackModel}`);
-           await safeEditMessage(bot, chatId, statusMsgId, `🔄 <i>Model error. Retrying with fallback...</i>`, { parse_mode: "HTML" });
+            DB.log("WARN", `Switching to fallback model: ${fallbackModel}`);
+            await safeEditMessage(bot, chatId, statusMsgId, `🔄 <i>Model error. Retrying with fallback...</i>`, { parse_mode: "HTML" });
 
           try {
             // Use the same retry logic with the fallback model
@@ -306,9 +307,9 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
             // Update chat with progress
             
             if (typeof result === "object" && result.audio_file) {
-              await bot.api.sendAudio(chatId, result.audio_file);
+              await bot.api.sendAudio(chatId, new InputFile(fs.createReadStream(result.audio_file)));
               await bot.api.sendMessage(chatId, `🔊 <i>Audio response sent.</i>`, { parse_mode: "HTML", message_thread_id: threadKey });
-              await fs.unlink(result.audio_file).catch(() => { });
+              await fsp.unlink(result.audio_file).catch(() => { });
             } else {
               await bot.api.sendMessage(chatId, `🔧 <b>Tool Executed:</b> <code>${tool.function.name}</code>\n\n📄 <b>Result:</b>\n<pre><code>${(result || "").slice(0, 2000)}</code></pre>`, { parse_mode: "HTML", message_thread_id: threadKey });
             }
