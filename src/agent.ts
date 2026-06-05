@@ -131,7 +131,7 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
           const stream = await openai.chat.completions.create({
             model: model,
             messages: messagesForAPI as any,
-            tools: AGENT_TOOLS as any,
+            tools: [...AGENT_TOOLS, TTS_TOOL] as any,
             stream: true,
             stream_options: { include_usage: true } // Request usage on final chunk
           });
@@ -220,7 +220,7 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
               const result = await openai.chat.completions.create({
                 model: fallbackModel,
                 messages: messagesForAPI as any,
-                tools: AGENT_TOOLS as any,
+                tools: [...AGENT_TOOLS, TTS_TOOL] as any,
               });
               if (result && (result as any).error) throw new Error((result as any).error.message || JSON.stringify((result as any).error));
               if (!result || !result.choices || result.choices.length === 0) {
