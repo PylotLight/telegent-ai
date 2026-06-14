@@ -37,11 +37,15 @@ A highly capable, local-tool-enabled Telegram AI Agent powered by **OpenRouter**
 | :--- | :--- |
 | `/start` | Wakes up the bot and provides a brief introduction. |
 | `/ai [prompt]` | Wakes up the AI for the current thread and processes your message. |
+| `/cancel` | Aborts any active AI reasoning run or executing shell command for the current thread. |
 | `/clear` | Wipes the conversation memory and token statistics for the current thread. |
-| `/status` | Displays context size, total token usage, and active state for the current thread. |
+| `/status` | Displays context size, token usage, active state, and current Git branch/commit info. |
 | `/model` | Shows the currently active AI model. |
 | `/model [id]` | Switches the AI to a specific OpenRouter model ID. |
 | `/model search [query]` | Searches OpenRouter for models (e.g., `/model search free`) with inline buttons to instantly switch. |
+| `/branch [name]` | Switches the active developer branch to the specified branch, runs validation, and hot-reloads. |
+| `/branch list` | Lists all remote git branches available in the repository. |
+| `/update` | Queries remote for updates on the active branch, lists the changelog, and allows pulling & hot-swapping via inline buttons. |
 
 ---
 

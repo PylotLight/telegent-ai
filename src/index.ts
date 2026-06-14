@@ -1,4 +1,4 @@
-import { Bot, GrammyError, HttpError } from "grammy";
+import { Bot, GrammyError, HttpError, InlineKeyboard } from "grammy";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import * as path from "node:path";
@@ -8,6 +8,7 @@ import { processUserMessage, setupCommands } from "./commands";
 import { runAgent } from "./agent";
 import { DB } from "./db";
 import { initScheduler } from "./scheduler";
+import { State } from "./state";
 
 const execAsync = promisify(exec);
 
@@ -49,6 +50,7 @@ async function start() {
   // Handle Inline Button Clicks
   bot.on("callback_query:data", async (ctx) => {
     const data = ctx.callbackQuery.data;
+    if (!data) return;
 
     // Upgrades and Updates handling
     if (data === "upd:pull") {
@@ -104,6 +106,16 @@ async function start() {
       return;
     }
 
+    if (data.startsWith("cancel_run:") || data.startsWith("cancel_cmd:")) {
+      const parts = data.split(":");
+      const threadKey = parseInt(parts[1] || "", 10);
+      if (!isNaN(threadKey)) {
+        State.abortRun(threadKey);
+        await ctx.answerCallbackQuery({ text: "Cancellation signal sent." });
+      }
+      return;
+    }
+
     // Shell Command Approval
     const [action, cmdId] = data.split(":");
     if (!action || !cmdId) return;
@@ -113,7 +125,7 @@ async function start() {
     const history = DB.getMessages(pending.thread_key);
     if (!history || history.length === 0) return ctx.answerCallbackQuery("Memory lost");
 
-    const updateMessage = async (text: string) => bot.api.editMessageText(pending.chat_id, pending.status_msg_id, text, { parse_mode: "MarkdownV2" });
+    const updateMessage = async (text: string, options: any = {}) => bot.api.editMessageText(pending.chat_id, pending.status_msg_id, text, { parse_mode: "MarkdownV2", ...options });
 
     if (action === "reject") {
       DB.addMessage(pending.thread_key, { role: "tool", content: "User rejected execution.", toolCallId: pending.tool_call_id });
@@ -124,14 +136,36 @@ async function start() {
     }
 
     if (action === "approve") {
-      await updateMessage(`⏳ *Executing...*\n\`\`\`${escapeMarkdownV2(pending.command)}\n\`\`\``);
+      const kb = new InlineKeyboard().text("❌ Cancel Command", `cancel_cmd:${pending.thread_key}`);
+      await updateMessage(`⏳ *Executing...*\n\`\`\`${escapeMarkdownV2(pending.command)}\n\`\`\``, { reply_markup: kb });
+      
       try {
-        const { stdout, stderr } = await execAsync(pending.command);
+        const promise = new Promise<{ stdout: string, stderr: string }>((resolve, reject) => {
+          const child = exec(pending.command, (error, stdout, stderr) => {
+            State.activeProcesses.delete(pending.thread_key);
+            if (error) {
+              reject(error);
+            } else {
+              resolve({ stdout, stderr });
+            }
+          });
+          State.activeProcesses.set(pending.thread_key, child);
+        });
+
+        const { stdout, stderr } = await promise;
         DB.addMessage(pending.thread_key, { role: "tool", content: (stdout || stderr || "Done").slice(0, 4000), toolCallId: pending.tool_call_id });
         await updateMessage(`✅ *Executed:*\n\`\`\`${escapeMarkdownV2(pending.command)}\n\`\`\`\n\n📄 *Result:*\n\`\`\`${escapeMarkdownV2((stdout || stderr || "Done").slice(0, 3000))}\n\`\`\``);
       } catch (error: any) {
-        DB.addMessage(pending.thread_key, { role: "tool", content: `Error: ${error.message}`, toolCallId: pending.tool_call_id });
-        await updateMessage(`⚠️ *Failed:*\n\`\`\`${escapeMarkdownV2(pending.command)}\n\`\`\`\n\n*Error:*\n\`\`\`${escapeMarkdownV2(error.message)}\n\`\`\``);
+        const isKilled = error.signal === "SIGKILL" || error.signal === "SIGTERM" || error.killed;
+        const errorMsg = isKilled ? "Command execution was cancelled/terminated by the user." : error.message;
+
+        DB.addMessage(pending.thread_key, { role: "tool", content: `Error: ${errorMsg}`, toolCallId: pending.tool_call_id });
+
+        if (isKilled) {
+          await updateMessage(`❌ *Cancelled:*\n\`\`\`${escapeMarkdownV2(pending.command)}\n\`\`\``);
+        } else {
+          await updateMessage(`⚠️ *Failed:*\n\`\`\`${escapeMarkdownV2(pending.command)}\n\`\`\`\n\n*Error:*\n\`\`\`${escapeMarkdownV2(error.message)}\n\`\`\``);
+        }
       }
       DB.deletePendingAction(cmdId);
       await runAgent(bot, pending.thread_key, pending.chat_id, pending.status_msg_id);

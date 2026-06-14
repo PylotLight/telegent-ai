@@ -12,7 +12,7 @@ import { escapeMarkdownV2 } from "./utils";
 const execAsync = promisify(exec);
 
 export function setupCommands(bot: Bot) {
-  bot.command("start", (ctx) => ctx.reply("👋 Agent online. Use /ai to force trigger. /model to switch AI. /status for info. /clear to reset."));
+  bot.command("start", (ctx) => ctx.reply("👋 Agent online. Use /ai to force trigger. /model to switch AI. /status for info. /clear to reset. /cancel to abort active runs."));
 
   bot.command("clear", (ctx) => {
     const threadKey = ctx.message?.message_thread_id || ctx.chat.id;
@@ -31,6 +31,13 @@ export function setupCommands(bot: Bot) {
       ? `\n\n⚠️ *Warning: Context size is high\!*` : "";
     const model = thread?.model_id || State.currentAiModel;
 
+    let stateStr = "🟢 Listening";
+    if (State.activeProcesses.has(threadKey)) {
+      stateStr = "⚙️ Running Command";
+    } else if (State.activeAbortControllers.has(threadKey)) {
+      stateStr = "💭 Thinking";
+    }
+
     let gitInfo = "";
     try {
       const { stdout: branch } = await execAsync("git branch --show-current");
@@ -42,7 +49,7 @@ export function setupCommands(bot: Bot) {
     }
 
     const msg = `📊 *LLM Context Status*
-*State:* 🟢 Listening
+*State:* ${stateStr}
 *Memory:* ${history.length} msgs
 *Context:* ~${stats.last_context_size.toLocaleString()} tokens
 *Model:* \`${escapeMarkdownV2(model)}\`
@@ -52,7 +59,7 @@ ${gitInfo}
 *Prompt:* ${stats.prompt_tokens.toLocaleString()}
 *Output:* ${stats.completion_tokens.toLocaleString()}
 *Total:* ${total.toLocaleString()}
-⚡ *Cached (Saved\!):* ${stats.cached_tokens.toLocaleString()}${warning}`;
+*Cached (Saved\!):* ${stats.cached_tokens.toLocaleString()}${warning}`;
 
     return ctx.reply(msg, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
   });
@@ -202,6 +209,19 @@ ${gitInfo}
     ctx.reply(`✅ Model set to:\n\`${escapeMarkdownV2(match)}\``, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
   });
 
+  bot.command("cancel", async (ctx) => {
+    const threadKey = ctx.message?.message_thread_id || ctx.chat.id;
+    const hasActiveProcess = State.activeProcesses.has(threadKey);
+    const hasActiveAI = State.activeAbortControllers.has(threadKey);
+
+    if (!hasActiveProcess && !hasActiveAI) {
+      return ctx.reply("❌ No active command or AI run to cancel.", { message_thread_id: threadKey });
+    }
+
+    State.abortRun(threadKey);
+    return ctx.reply("🛑 Active execution/thinking cancelled.", { message_thread_id: threadKey });
+  });
+
   bot.command("ai", async (ctx) => {
     const threadKey = ctx.message?.message_thread_id || ctx.chat.id;
     DB.upsertThread(threadKey, { lastActive: Date.now() });
@@ -231,6 +251,7 @@ export async function processUserMessage(bot: Bot, prompt: string, threadKey: nu
   const timeAwarePrompt = `${prompt}\n\n[Current Time: ${localTimeStr}]`;
 
   DB.addMessage(threadKey, { role: "user", content: timeAwarePrompt });
-  const statusMsg = await bot.api.sendMessage(chatId, `🤔 _Thinking..._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
+  const cancelKb = new InlineKeyboard().text("❌ Cancel", `cancel_run:${threadKey}`);
+  const statusMsg = await bot.api.sendMessage(chatId, `🤔 _Thinking..._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey, reply_markup: cancelKb });
   await runAgent(bot, threadKey, chatId, statusMsg.message_id);
 }

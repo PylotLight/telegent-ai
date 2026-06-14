@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - **Dynamic Branch Switcher (`/branch`)**: Added an interactive Telegram command enabling the owner to query available remote branches and dynamically hot-swap the bot into a separate developer/feature branch for live testing.
 - **Interactive Upgrade (`/update`)**: Added a git-aware update manager command that queries remote changes on the active branch, lists the incoming changelog commit notes, and presents an inline approval keyboard to trigger clean process exits for automatic container restarts.
 - **Git Context Status**: Upgraded `/status` to dynamically include active Git branch name, commit hash, and log message for perfect environment tracking.
+- **Execution Cancellation**: Added support for aborting stuck background command executions and AI reasoning runs via inline `❌ Cancel` buttons and the `/cancel` bot command. Integrates dynamic AbortControllers and child process signals to stop stuck tasks instantly and cleanly resume interactions.
 
 ### Fixed
 - **System Prompt Sorting Drift**: Fixed a bug where deleting and re-inserting the system prompt on config/model changes caused it to drift to the end of the history array by enforcing `created_at = 0` database sorting.
