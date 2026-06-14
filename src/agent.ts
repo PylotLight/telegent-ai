@@ -38,32 +38,42 @@ async function safeEditMessage(bot: Bot, chatId: number, messageId: number, text
 }
 
 export async function runAgent(bot: Bot, threadKey: number, chatId: number, statusMsgId: number) {
+  // Abort any existing run for this thread first
+  State.abortRun(threadKey);
+
+  const controller = new AbortController();
+  const signal = controller.signal;
+  State.activeAbortControllers.set(threadKey, controller);
+
+  const cancelKb = new InlineKeyboard().text("❌ Cancel", `cancel_run:${threadKey}`);
+
   DB.log("INFO", `Starting runAgent for thread ${threadKey}`);
 
   // Reload config and refresh system prompt dynamically (keeps it sorted at index 0 with created_at = 0)
-  await loadAgentConfig();
-  const updatedPrompt = await getSystemPrompt(threadKey);
-  DB.updateSystemPrompt(threadKey, updatedPrompt);
-
-  let history = DB.getMessages(threadKey);
-
-  if (approximateTokenCount(history) > CONTEXT_TOKEN_LIMIT) {
-    const systemPrompt = history[0]?.role === "system" ? history[0] : null;
-    const otherMessages = history.filter(m => m.role !== "system" || (systemPrompt && history.indexOf(m) !== 0));
-    while (approximateTokenCount([systemPrompt, ...otherMessages]) > CONTEXT_TOKEN_LIMIT && otherMessages.length > 0) {
-      otherMessages.shift();
-    }
-    history = systemPrompt ? [systemPrompt, ...otherMessages] : otherMessages;
-    DB.clearMessages(threadKey);
-    history.forEach(msg => DB.addMessage(threadKey, { role: msg.role, content: msg.content, toolCallId: msg.tool_call_id }));
-  }
-
-  const thread = DB.getThread(threadKey);
-  const model = thread?.model_id || State.currentAiModel;
-  const openai = getOpenRouterClient();
-
   try {
+    await loadAgentConfig();
+    const updatedPrompt = await getSystemPrompt(threadKey);
+    DB.updateSystemPrompt(threadKey, updatedPrompt);
+
+    let history = DB.getMessages(threadKey);
+
+    if (approximateTokenCount(history) > CONTEXT_TOKEN_LIMIT) {
+      const systemPrompt = history[0]?.role === "system" ? history[0] : null;
+      const otherMessages = history.filter(m => m.role !== "system" || (systemPrompt && history.indexOf(m) !== 0));
+      while (approximateTokenCount([systemPrompt, ...otherMessages]) > CONTEXT_TOKEN_LIMIT && otherMessages.length > 0) {
+        otherMessages.shift();
+      }
+      history = systemPrompt ? [systemPrompt, ...otherMessages] : otherMessages;
+      DB.clearMessages(threadKey);
+      history.forEach(msg => DB.addMessage(threadKey, { role: msg.role, content: msg.content, toolCallId: msg.tool_call_id }));
+    }
+
+    const thread = DB.getThread(threadKey);
+    const model = thread?.model_id || State.currentAiModel;
+    const openai = getOpenRouterClient();
+
     for (let i = 0; i < 5; i++) {
+      if (signal.aborted) throw new Error("Aborted");
       let completion: any;
 
       const messagesForAPI = history.map((msg, index) => {
@@ -99,6 +109,8 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
         DB.log("INFO", `Sending request to model ${model} with ${messagesForAPI.length} messages`);
 
         completion = await withRetry(async () => {
+          if (signal.aborted) throw new Error("Aborted");
+
           // LIVE STREAMING REQUEST
           const stream = await openai.chat.completions.create({
             model: model,
@@ -106,7 +118,7 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
             tools: [...AGENT_TOOLS, TTS_TOOL] as any,
             stream: true,
             stream_options: { include_usage: true } // Request usage on final chunk
-          });
+          }, { signal });
 
           let fullContent = "";
           let toolCalls: any[] = [];
@@ -114,6 +126,7 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
           let finalUsage: any = null;
 
           for await (const chunk of stream) {
+            if (signal.aborted) throw new Error("Aborted");
             if ((chunk as any).usage) finalUsage = (chunk as any).usage;
 
             const delta = chunk.choices?.[0]?.delta;
@@ -127,7 +140,7 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
               if (now - lastEditTime > 1500) {
                 const display = fullContent.length > 4000 ? fullContent.slice(-4000) : fullContent;
                 // No parse_mode while streaming to prevent half-baked tags from crashing API
-                safeEditMessage(bot, chatId, statusMsgId, "💭 " + display).catch(() => { });
+                safeEditMessage(bot, chatId, statusMsgId, "💭 " + display, { reply_markup: cancelKb }).catch(() => { });
                 lastEditTime = now;
               }
             }
@@ -160,6 +173,8 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
           };
         }, `Model ${model} request`, isRetryableError);
       } catch (error: any) {
+        if (signal.aborted || error.message === "Aborted") throw new Error("Aborted");
+
         // If we've exhausted all retries for this model, try fallback models
         const errorMsg = error.message || "Unknown Error";
         const isAborted = error.name === "AbortError" || errorMsg.includes("aborted");
@@ -174,7 +189,7 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
 
         if (isFatal) {
           // For fatal errors, we don't retry or fallback
-           await safeEditMessage(bot, chatId, statusMsgId, `❌ *AI Model API Error (fatal):*\n\`\`\`\n${escapeMarkdownV2(error.message)}\n\`\`\``, { parse_mode: "MarkdownV2" });
+          await safeEditMessage(bot, chatId, statusMsgId, `❌ *AI Model API Error (fatal):*\n\`\`\`\n${escapeMarkdownV2(error.message)}\n\`\`\``, { parse_mode: "MarkdownV2" });
           return;
         }
 
@@ -183,17 +198,18 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
         let fallbackAttempted = false;
         for (const fallbackModel of fallbackModels) {
           if (fallbackModel === model) continue; // Skip the current model
-            DB.log("WARN", `Switching to fallback model: ${fallbackModel}`);
-           await safeEditMessage(bot, chatId, statusMsgId, `🔄 _Model error. Retrying with fallback..._`, { parse_mode: "MarkdownV2" });
+          DB.log("WARN", `Switching to fallback model: ${fallbackModel}`);
+          await safeEditMessage(bot, chatId, statusMsgId, `🔄 _Model error\. Retrying with fallback\.\.\._`, { parse_mode: "MarkdownV2", reply_markup: cancelKb });
 
           try {
             // Use the same retry logic with the fallback model
             completion = await withRetry(async () => {
+              if (signal.aborted) throw new Error("Aborted");
               const result = await openai.chat.completions.create({
                 model: fallbackModel,
                 messages: messagesForAPI as any,
                 tools: [...AGENT_TOOLS, TTS_TOOL] as any,
-              });
+              }, { signal });
               if (result && (result as any).error) throw new Error((result as any).error.message || JSON.stringify((result as any).error));
               if (!result || !result.choices || result.choices.length === 0) {
                 throw new Error(`Model returned an empty or invalid response.`);
@@ -206,6 +222,7 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
             fallbackAttempted = true;
             break;
           } catch (fallbackError: any) {
+            if (signal.aborted || fallbackError.message === "Aborted") throw new Error("Aborted");
             const fbErrorMsg = fallbackError.message || "Unknown Error";
             DB.log("ERROR", `Fallback model ${fallbackModel} failed: ${fbErrorMsg}`);
             console.error(`[Fallback Error] ${fallbackModel}: ${fbErrorMsg}`);
@@ -215,7 +232,7 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
 
         // If we've tried all fallback models and still failed, show the error
         if (!fallbackAttempted) {
-           await safeEditMessage(bot, chatId, statusMsgId, `❌ *All models failed:*\n\`\`\`\n${escapeMarkdownV2(error.message)}\n\`\`\``, { parse_mode: "MarkdownV2" });
+          await safeEditMessage(bot, chatId, statusMsgId, `❌ *All models failed:*\n\`\`\`\n${escapeMarkdownV2(error.message)}\n\`\`\``, { parse_mode: "MarkdownV2" });
           return;
         }
       }
@@ -279,7 +296,7 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
             
             if (typeof result === "object" && result.audio_file) {
               await bot.api.sendAudio(chatId, new InputFile(fs.createReadStream(result.audio_file)));
-              await bot.api.sendMessage(chatId, `🔊 _Audio response sent._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
+              await bot.api.sendMessage(chatId, `🔊 _Audio response sent\._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
               await fsp.unlink(result.audio_file).catch(() => { });
             } else {
               await bot.api.sendMessage(chatId, `🔧 *Tool Executed:* \`${tool.function.name}\`\n\n📄 *Result:*\n\`\`\`\n${(result || "").slice(0, 2000)}\n\`\`\``, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
@@ -288,7 +305,7 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
         }
 // If we have executed any non-shell tools, update the chat to show we are done with tool execution
       if (!pendingShellTool && executedToolsInLoop.length > 0) {
-        await safeEditMessage(bot, chatId, statusMsgId, `💭 _Finished executing tools. Thinking..._`, { parse_mode: "MarkdownV2" });
+        await safeEditMessage(bot, chatId, statusMsgId, `💭 _Finished executing tools\. Thinking\.\.\._`, { parse_mode: "MarkdownV2", reply_markup: cancelKb });
       }
 
       toolResults.forEach(res => {
@@ -308,12 +325,21 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
 
       // ENHANCED VISIBILITY: List the tools that were just run
       const toolList = runningTools.join(", ");
-      await bot.api.sendMessage(chatId, `🔄 _Executed: \`${toolList}\`. Continuing thought..._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
+      await bot.api.sendMessage(chatId, `🔄 _Executed: \`${toolList}\`\. Continuing thought\.\.\._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
     }
     // If loop finishes without return
-    await bot.api.sendMessage(chatId, `⚠️ _Agent hit maximum thought loops (5)._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
+    await bot.api.sendMessage(chatId, `⚠️ _Agent hit maximum thought loops (5)\._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
   } catch (globalError: any) {
+    if (signal.aborted || globalError.message === "Aborted") {
+      DB.log("INFO", `runAgent execution for thread ${threadKey} was aborted.`);
+      await safeEditMessage(bot, chatId, statusMsgId, `❌ *Thinking Cancelled\.*`, { parse_mode: "MarkdownV2" });
+      return;
+    }
     DB.log("CRITICAL", `runAgent Global Error: ${globalError.message}`);
     await bot.api.sendMessage(chatId, `❌ *Internal Agent Error:*\n\`\`\`\n${escapeMarkdownV2(globalError.message)}\n\`\`\``, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
+  } finally {
+    if (State.activeAbortControllers.get(threadKey) === controller) {
+      State.activeAbortControllers.delete(threadKey);
+    }
   }
 }

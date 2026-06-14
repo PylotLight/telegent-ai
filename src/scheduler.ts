@@ -52,7 +52,7 @@ export function startJob(task: any) {
       // Notify the user subtly that a task triggered
       await activeBot.api.sendMessage(
           task.chat_id, 
-          `⏰ _Running scheduled task..._`, 
+          `⏰ _Running scheduled task\.\.\._`, 
           { parse_mode: "MarkdownV2", message_thread_id: task.thread_key }
       ).catch(()=>{});
 

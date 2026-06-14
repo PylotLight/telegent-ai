@@ -57,7 +57,7 @@ async function start() {
         await bot.api.editMessageText(
           ctx.chat.id,
           ctx.callbackQuery.message.message_id,
-          "⏳ *Pulling updates, typechecking, and hot-swapping. Stand by...*",
+          "⏳ *Pulling updates, typechecking, and hot\-swapping\. Stand by\.\.\.*",
           { parse_mode: "MarkdownV2" }
         );
       }
@@ -73,7 +73,7 @@ async function start() {
         await bot.api.editMessageText(
           ctx.chat.id,
           ctx.callbackQuery.message.message_id,
-          "❌ *Upgrade cancelled.*",
+          "❌ *Upgrade cancelled\.*",
           { parse_mode: "MarkdownV2" }
         );
       }

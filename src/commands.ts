@@ -109,7 +109,7 @@ ${gitInfo}
 
   bot.command("update", async (ctx) => {
     const threadKey = ctx.message?.message_thread_id || ctx.chat.id;
-    const statusMsg = await ctx.reply("🔍 _Checking remote for updates on current branch..._", { parse_mode: "MarkdownV2", message_thread_id: threadKey });
+    const statusMsg = await ctx.reply("🔍 _Checking remote for updates on current branch\.\.\._", { parse_mode: "MarkdownV2", message_thread_id: threadKey });
     
     try {
       await execAsync("git fetch --all");
@@ -126,7 +126,7 @@ ${gitInfo}
         return ctx.api.editMessageText(
           ctx.chat.id,
           statusMsg.message_id,
-          `✅ *Up to date!*\n\nBot is running the latest commit on branch \`${escapeMarkdownV2(currentBranch)}\`:\n\`${escapeMarkdownV2(localHash.substring(0, 7))}\``,
+          `✅ *Up to date\!*\n\nBot is running the latest commit on branch \`${escapeMarkdownV2(currentBranch)}\`:\n\`${escapeMarkdownV2(localHash.substring(0, 7))}\``,
           { parse_mode: "MarkdownV2" }
         );
       }
@@ -141,7 +141,7 @@ ${gitInfo}
       return ctx.api.editMessageText(
         ctx.chat.id,
         statusMsg.message_id,
-        `🔄 *Updates available on branch \`${escapeMarkdownV2(currentBranch)}\`!*\n\n📌 *Current Commit:* \`${escapeMarkdownV2(localHash.substring(0, 7))}\`\n📡 *Remote Commit:* \`${escapeMarkdownV2(remoteHash.substring(0, 7))}\`\n\n📄 *Changelog:*\n\`\`\`\n${escapeMarkdownV2(log.trim() || "No detailed log.")}\n\`\`\``,
+        `🔄 *Updates available on branch \`${escapeMarkdownV2(currentBranch)}\`\!*\n\n📌 *Current Commit:* \`${escapeMarkdownV2(localHash.substring(0, 7))}\`\n📡 *Remote Commit:* \`${escapeMarkdownV2(remoteHash.substring(0, 7))}\`\n\n📄 *Changelog:*\n\`\`\`\n${escapeMarkdownV2(log.trim() || "No detailed log.")}\n\`\`\``,
         { parse_mode: "MarkdownV2", reply_markup: kb }
       );
     } catch (e: any) {
@@ -161,7 +161,7 @@ ${gitInfo}
 
     if (match.toLowerCase().startsWith("search ")) {
       const query = match.substring(7).trim().toLowerCase();
-      const statusMsg = await ctx.reply(`🔍 _Searching OpenRouter for "${escapeMarkdownV2(query)}"..._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
+      const statusMsg = await ctx.reply(`🔍 _Searching OpenRouter for "${escapeMarkdownV2(query)}"\.\.\._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
 
       try {
         const response = await fetch("https://openrouter.ai/api/v1/models");
@@ -215,6 +215,19 @@ ${gitInfo}
 
     await processUserMessage(bot, ctx.match, threadKey, ctx.chat.id);
   });
+
+  bot.command("cancel", async (ctx) => {
+    const threadKey = ctx.message?.message_thread_id || ctx.chat.id;
+    const hasActiveProcess = State.activeProcesses.has(threadKey);
+    const hasActiveAI = State.activeAbortControllers.has(threadKey);
+
+    if (!hasActiveProcess && !hasActiveAI) {
+      return ctx.reply("❌ No active command or AI run to cancel.", { message_thread_id: threadKey });
+    }
+
+    State.abortRun(threadKey);
+    return ctx.reply("🛑 Active execution/thinking cancelled.", { message_thread_id: threadKey });
+  });
 }
 
 export async function processUserMessage(bot: Bot, prompt: string, threadKey: number, chatId: number) {
@@ -231,6 +244,7 @@ export async function processUserMessage(bot: Bot, prompt: string, threadKey: nu
   const timeAwarePrompt = `${prompt}\n\n[Current Time: ${localTimeStr}]`;
 
   DB.addMessage(threadKey, { role: "user", content: timeAwarePrompt });
-  const statusMsg = await bot.api.sendMessage(chatId, `🤔 _Thinking..._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
+  const cancelKb = new InlineKeyboard().text("❌ Cancel", `cancel_run:${threadKey}`);
+  const statusMsg = await bot.api.sendMessage(chatId, `🤔 _Thinking\.\.\._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey, reply_markup: cancelKb });
   await runAgent(bot, threadKey, chatId, statusMsg.message_id);
 }

@@ -1,28 +1,40 @@
-apiVersion: v1
-kind: Pod
+apiVersion: apps/v1
+kind: Deployment
 metadata:
   name: telegent-ai
+  labels:
+    app: telegent-ai
 spec:
-  hostNetwork: true               # Use host network stack for IoT access
-  dnsPolicy: ClusterFirstWithHostNet # Ensure cluster DNS resolution works
-  containers:
-  - name: telegent-ai
-    image: telegent-ai
-    imagePullPolicy: IfNotPresent
-    securityContext:
-      privileged: true            # Grant full host access
-    volumeMounts:
-    - name: brain-storage
-      mountPath: /app/brain
-  volumes:
-  - name: brain-storage
-    hostPath:
-      path: /Data/containerData/telegent-ai/brain
-      type: Directory
-  - name: host-sys
-    hostPath:
-      path: /sys
-  - name: host-dev
-    hostPath:
-      path: /dev
-  restartPolicy: Always   
+  replicas: 1
+  selector:
+    matchLabels:
+      app: telegent-ai
+  strategy:
+    type: Recreate              # Recreate so only one instance runs at a time (single-bot constraint)
+  template:
+    metadata:
+      labels:
+        app: telegent-ai
+    spec:
+      hostNetwork: true               # Use host network stack for IoT/LIFX LAN access
+      dnsPolicy: ClusterFirstWithHostNet # Ensure cluster DNS resolution works with hostNetwork
+      containers:
+      - name: telegent-ai
+        image: telegent-ai
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          privileged: true            # Grant full host access
+        volumeMounts:
+        - name: brain-storage
+          mountPath: /app/brain
+      volumes:
+      - name: brain-storage
+        hostPath:
+          path: /Data/containerData/telegent-ai/brain
+          type: Directory
+      - name: host-sys
+        hostPath:
+          path: /sys
+      - name: host-dev
+        hostPath:
+          path: /dev
