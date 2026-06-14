@@ -52,8 +52,8 @@ export function startJob(task: any) {
       // Notify the user subtly that a task triggered
       await activeBot.api.sendMessage(
           task.chat_id, 
-          `⏰ <i>Running scheduled task...</i>`, 
-          { parse_mode: "HTML", message_thread_id: task.thread_key }
+          `⏰ _Running scheduled task..._`, 
+          { parse_mode: "MarkdownV2", message_thread_id: task.thread_key }
       ).catch(()=>{});
 
       // Trigger the agent loop using processUserMessage

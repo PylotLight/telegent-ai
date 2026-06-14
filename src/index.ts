@@ -2,6 +2,7 @@ import { Bot, GrammyError, HttpError } from "grammy";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import * as path from "node:path";
+import { escapeMarkdownV2 } from "./utils";
 import { TELEGRAM_TOKEN, MY_TELEGRAM_ID, ensureBrainDir, loadAgentConfig, initSecrets, getSystemPrompt, DEFAULT_MODEL } from "./config";
 import { processUserMessage, setupCommands } from "./commands";
 import { runAgent } from "./agent";
@@ -56,8 +57,8 @@ async function start() {
         await bot.api.editMessageText(
           ctx.chat.id,
           ctx.callbackQuery.message.message_id,
-          "⏳ <b>Pulling updates, typechecking, and hot-swapping. Stand by...</b>",
-          { parse_mode: "HTML" }
+          "⏳ *Pulling updates, typechecking, and hot-swapping. Stand by...*",
+          { parse_mode: "MarkdownV2" }
         );
       }
       setTimeout(() => {
@@ -72,8 +73,8 @@ async function start() {
         await bot.api.editMessageText(
           ctx.chat.id,
           ctx.callbackQuery.message.message_id,
-          "❌ <b>Upgrade cancelled.</b>",
-          { parse_mode: "HTML" }
+          "❌ *Upgrade cancelled.*",
+          { parse_mode: "MarkdownV2" }
         );
       }
       return;
@@ -96,8 +97,8 @@ async function start() {
         await bot.api.editMessageText(
           ctx.chat.id,
           ctx.callbackQuery.message.message_id,
-          `✅ <b>Model set to:</b>\n<code>${modelId}</code>`,
-          { parse_mode: "HTML" }
+          `✅ *Model set to:*\n\`${escapeMarkdownV2(modelId)}\``,
+          { parse_mode: "MarkdownV2" }
         );
       }
       return;
@@ -112,25 +113,25 @@ async function start() {
     const history = DB.getMessages(pending.thread_key);
     if (!history || history.length === 0) return ctx.answerCallbackQuery("Memory lost");
 
-    const updateMessage = async (text: string) => bot.api.editMessageText(pending.chat_id, pending.status_msg_id, text, { parse_mode: "HTML" });
+    const updateMessage = async (text: string) => bot.api.editMessageText(pending.chat_id, pending.status_msg_id, text, { parse_mode: "MarkdownV2" });
 
     if (action === "reject") {
       DB.addMessage(pending.thread_key, { role: "tool", content: "User rejected execution.", toolCallId: pending.tool_call_id });
       DB.deletePendingAction(cmdId);
-      await updateMessage(`❌ <b>Command Rejected:</b>\n<pre><code>${pending.command}</code></pre>`);
+      await updateMessage(`❌ *Command Rejected:*\n\`\`\`${escapeMarkdownV2(pending.command)}\n\`\`\``);
       await runAgent(bot, pending.thread_key, pending.chat_id, pending.status_msg_id);
       return;
     }
 
     if (action === "approve") {
-      await updateMessage(`⏳ <b>Executing...</b>\n<pre><code>${pending.command}</code></pre>`);
+      await updateMessage(`⏳ *Executing...*\n\`\`\`${escapeMarkdownV2(pending.command)}\n\`\`\``);
       try {
         const { stdout, stderr } = await execAsync(pending.command);
         DB.addMessage(pending.thread_key, { role: "tool", content: (stdout || stderr || "Done").slice(0, 4000), toolCallId: pending.tool_call_id });
-        await updateMessage(`✅ <b>Executed:</b>\n<pre><code>${pending.command}</code></pre>\n\n📄 <b>Result:</b>\n<pre><code>${(stdout || stderr || "Done").slice(0, 3000)}</code></pre>`);
+        await updateMessage(`✅ *Executed:*\n\`\`\`${escapeMarkdownV2(pending.command)}\n\`\`\`\n\n📄 *Result:*\n\`\`\`${escapeMarkdownV2((stdout || stderr || "Done").slice(0, 3000))}\n\`\`\``);
       } catch (error: any) {
         DB.addMessage(pending.thread_key, { role: "tool", content: `Error: ${error.message}`, toolCallId: pending.tool_call_id });
-        await updateMessage(`⚠️ <b>Failed:</b>\n<pre><code>${pending.command}</code></pre>\n\n<b>Error:</b>\n<pre><code>${error.message}</code></pre>`);
+        await updateMessage(`⚠️ *Failed:*\n\`\`\`${escapeMarkdownV2(pending.command)}\n\`\`\`\n\n*Error:*\n\`\`\`${escapeMarkdownV2(error.message)}\n\`\`\``);
       }
       DB.deletePendingAction(cmdId);
       await runAgent(bot, pending.thread_key, pending.chat_id, pending.status_msg_id);

@@ -7,6 +7,7 @@ import { OPENROUTER_API_KEY, getSystemPrompt, loadAgentConfig } from "./config";
 import { State } from "./state";
 import { AGENT_TOOLS, TTS_TOOL, executeToolLocally } from "./tools";
 import { DB } from "./db";
+import { escapeMarkdownV2 } from "./utils";
 import { withRetry } from "./resilience";
 
 const CONTEXT_TOKEN_LIMIT = 100000;
@@ -14,36 +15,6 @@ const CONTEXT_TOKEN_LIMIT = 100000;
 function approximateTokenCount(messages: any[]): number {
   return messages.reduce((acc, msg) => acc + (msg.content?.length || 0) / 4, 0);
 }
-function mdToHTML(text: string): string {
-  if (!text) return text;
-
-  // 1. Protect code blocks (Markdown) to avoid escaping their content as markdown
-  const codeBlocks: string[] = [];
-  let processed = text.replace(/```(?:[a-z]+)?\s*([\s\S]*?)```/g, (match, content) => {
-    const id = `__CODE_BLOCK_${codeBlocks.length}__`;
-    const escaped = content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    codeBlocks.push(`<pre><code>${escaped}</code></pre>`);
-    return id;
-  });
-
-  // 2. Escape HTML, but allow specific tags that the LLM might use for formatting (like <pre> for tables)
-  processed = processed.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-  // 3. Convert Markdown to HTML
-  processed = processed.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>'); // Bold
-  processed = processed.replace(/\*(.*?)\*/g, '<i>$1</i>'); // Italic
-  processed = processed.replace(/_(.*?)_/g, '<i>$1</i>'); // Italic
-  processed = processed.replace(/`(.*?)`/g, '<code>$1</code>'); // Inline code
-  processed = processed.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2">$1</a>'); // Links & Tagging
-
-  // 4. Restore code blocks
-  codeBlocks.forEach((block, i) => {
-    processed = processed.replace(`__CODE_BLOCK_${i}__`, block);
-  });
-
-  return processed;
-}
-
 function getOpenRouterClient() {
   return new OpenAI({
     baseURL: "https://openrouter.ai/api/v1",
@@ -203,7 +174,7 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
 
         if (isFatal) {
           // For fatal errors, we don't retry or fallback
-          await safeEditMessage(bot, chatId, statusMsgId, `❌ <b>AI Model API Error (fatal):</b>\n<pre><code>${error.message}</code></pre>`, { parse_mode: "HTML" });
+           await safeEditMessage(bot, chatId, statusMsgId, `❌ *AI Model API Error (fatal):*\n\`\`\`\n${escapeMarkdownV2(error.message)}\n\`\`\``, { parse_mode: "MarkdownV2" });
           return;
         }
 
@@ -213,7 +184,7 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
         for (const fallbackModel of fallbackModels) {
           if (fallbackModel === model) continue; // Skip the current model
             DB.log("WARN", `Switching to fallback model: ${fallbackModel}`);
-            await safeEditMessage(bot, chatId, statusMsgId, `🔄 <i>Model error. Retrying with fallback...</i>`, { parse_mode: "HTML" });
+           await safeEditMessage(bot, chatId, statusMsgId, `🔄 _Model error. Retrying with fallback..._`, { parse_mode: "MarkdownV2" });
 
           try {
             // Use the same retry logic with the fallback model
@@ -244,7 +215,7 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
 
         // If we've tried all fallback models and still failed, show the error
         if (!fallbackAttempted) {
-          await safeEditMessage(bot, chatId, statusMsgId, `❌ <b>All models failed:</b>\n<pre><code>${error.message}</code></pre>`, { parse_mode: "HTML" });
+           await safeEditMessage(bot, chatId, statusMsgId, `❌ *All models failed:*\n\`\`\`\n${escapeMarkdownV2(error.message)}\n\`\`\``, { parse_mode: "MarkdownV2" });
           return;
         }
       }
@@ -267,8 +238,8 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
       const allTools = [...AGENT_TOOLS, TTS_TOOL];
 
       if (!msg.tool_calls || msg.tool_calls.length === 0) {
-        const finalHtml = mdToHTML(msg.content || "Done.");
-        await bot.api.sendMessage(chatId, finalHtml, { parse_mode: "HTML", message_thread_id: threadKey });
+        const finalText = msg.content || "Done.";
+        await bot.api.sendMessage(chatId, finalText, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
         return;
       }
 
@@ -308,16 +279,16 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
             
             if (typeof result === "object" && result.audio_file) {
               await bot.api.sendAudio(chatId, new InputFile(fs.createReadStream(result.audio_file)));
-              await bot.api.sendMessage(chatId, `🔊 <i>Audio response sent.</i>`, { parse_mode: "HTML", message_thread_id: threadKey });
+              await bot.api.sendMessage(chatId, `🔊 _Audio response sent._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
               await fsp.unlink(result.audio_file).catch(() => { });
             } else {
-              await bot.api.sendMessage(chatId, `🔧 <b>Tool Executed:</b> <code>${tool.function.name}</code>\n\n📄 <b>Result:</b>\n<pre><code>${(result || "").slice(0, 2000)}</code></pre>`, { parse_mode: "HTML", message_thread_id: threadKey });
+              await bot.api.sendMessage(chatId, `🔧 *Tool Executed:* \`${tool.function.name}\`\n\n📄 *Result:*\n\`\`\`\n${(result || "").slice(0, 2000)}\n\`\`\``, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
             }
+          }
         }
-      }
 // If we have executed any non-shell tools, update the chat to show we are done with tool execution
       if (!pendingShellTool && executedToolsInLoop.length > 0) {
-        await safeEditMessage(bot, chatId, statusMsgId, `💭 <i>Finished executing tools. Thinking...</i>`, { parse_mode: "HTML" });
+        await safeEditMessage(bot, chatId, statusMsgId, `💭 _Finished executing tools. Thinking..._`, { parse_mode: "MarkdownV2" });
       }
 
       toolResults.forEach(res => {
@@ -331,18 +302,18 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
         const cmdId = crypto.randomUUID().slice(0, 8);
         DB.setPendingAction(cmdId, { threadKey, chatId, statusMsgId, toolCallId: pendingShellTool.id, command: pendingShellCommand });
         const kb = new InlineKeyboard().text("✅ Approve", `approve:${cmdId}`).text("❌ Reject", `reject:${cmdId}`);
-        await bot.api.sendMessage(chatId, `🛠️ <b>Requires Approval:</b>\n<pre><code>${pendingShellCommand}</code></pre>`, { parse_mode: "HTML", reply_markup: kb, message_thread_id: threadKey });
+        await bot.api.sendMessage(chatId, `🛠️ *Requires Approval:*\n\`\`\`\n${pendingShellCommand}\n\`\`\``, { parse_mode: "MarkdownV2", reply_markup: kb, message_thread_id: threadKey });
         return;
       }
 
       // ENHANCED VISIBILITY: List the tools that were just run
       const toolList = runningTools.join(", ");
-      await bot.api.sendMessage(chatId, `🔄 <i>Executed: <code>${toolList}</code>. Continuing thought...</i>`, { parse_mode: "HTML", message_thread_id: threadKey });
+      await bot.api.sendMessage(chatId, `🔄 _Executed: \`${toolList}\`. Continuing thought..._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
     }
     // If loop finishes without return
-    await bot.api.sendMessage(chatId, `⚠️ <i>Agent hit maximum thought loops (5).</i>`, { parse_mode: "HTML", message_thread_id: threadKey });
+    await bot.api.sendMessage(chatId, `⚠️ _Agent hit maximum thought loops (5)._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
   } catch (globalError: any) {
     DB.log("CRITICAL", `runAgent Global Error: ${globalError.message}`);
-    await bot.api.sendMessage(chatId, `❌ <b>Internal Agent Error:</b>\n<pre><code>${globalError.message}</code></pre>`, { parse_mode: "HTML", message_thread_id: threadKey });
+    await bot.api.sendMessage(chatId, `❌ *Internal Agent Error:*\n\`\`\`\n${escapeMarkdownV2(globalError.message)}\n\`\`\``, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
   }
 }

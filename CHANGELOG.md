@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **MarkdownV2 Migration**: Migrated all remaining Telegram HTML parse modes (`parse_mode: "HTML"`) across the codebase to `parse_mode: "MarkdownV2"` and converted all raw HTML tags (`<b>`, `<i>`, `<code>`, `<pre>`) to their equivalent native markdown representation (`*`, `_`, `\``, `\`\`\``). Added proper escaping using `escapeMarkdownV2` for all dynamic parameters.
 - **Unified Configuration**: Merged the hardcoded system prompt template directly into `brain/agent_config.md` under a customizable `## System Prompt Instructions` section.
 - **Timezone Awareness Configuration**: Added a customizable `Timezone` key to `brain/agent_config.md` (defaulting to the host system's resolved timezone name).
 - **Time-Aware Helpers**: Added dynamic timezone offset and ISO-8601 formatting utilities in `src/config.ts` to compute exact local times without using external date libraries.

@@ -7,6 +7,7 @@ import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import * as path from "node:path";
 import fs from "node:fs/promises";
+import { escapeMarkdownV2 } from "./utils";
 
 const execAsync = promisify(exec);
 
@@ -27,7 +28,7 @@ export function setupCommands(bot: Bot) {
 
     const total = stats.prompt_tokens + stats.completion_tokens;
     let warning = stats.last_context_size > agentConfig.maxTokenWarning
-      ? `\n\n⚠️ <b>Warning: Context size is high!</b>` : "";
+      ? `\n\n⚠️ *Warning: Context size is high\!*` : "";
     const model = thread?.model_id || State.currentAiModel;
 
     let gitInfo = "";
@@ -35,25 +36,25 @@ export function setupCommands(bot: Bot) {
       const { stdout: branch } = await execAsync("git branch --show-current");
       const { stdout: commit } = await execAsync("git rev-parse --short HEAD");
       const { stdout: log } = await execAsync("git log -1 --pretty=format:'%s'");
-      gitInfo = `\n🌿 <b>Branch:</b> <code>${branch.trim()}</code>\n📌 <b>Commit:</b> <code>${commit.trim()}</code>\n📝 <b>Log:</b> <i>${log.trim()}</i>`;
+      gitInfo = `\n🌿 *Branch:* \`${escapeMarkdownV2(branch.trim())}\`\n📌 *Commit:* \`${escapeMarkdownV2(commit.trim())}\`\n📝 *Log:* _${escapeMarkdownV2(log.trim())}_`;
     } catch (e: any) {
-      gitInfo = `\n⚠️ <b>Git Status:</b> ${e.message}`;
+      gitInfo = `\n⚠️ *Git Status:* ${escapeMarkdownV2(e.message)}`;
     }
 
-    const msg = `📊 <b>LLM Context Status</b>
-<b>State:</b> 🟢 Listening
-<b>Memory:</b> ${history.length} msgs
-<b>Context:</b> ~${stats.last_context_size.toLocaleString()} tokens
-<b>Model:</b> <code>${model}</code>
+    const msg = `📊 *LLM Context Status*
+*State:* 🟢 Listening
+*Memory:* ${history.length} msgs
+*Context:* ~${stats.last_context_size.toLocaleString()} tokens
+*Model:* \`${escapeMarkdownV2(model)}\`
 ${gitInfo}
 
-🪙 <b>Token Usage:</b>
-<b>Prompt:</b> ${stats.prompt_tokens.toLocaleString()}
-<b>Output:</b> ${stats.completion_tokens.toLocaleString()}
-<b>Total:</b> ${total.toLocaleString()}
-⚡ <b>Cached (Saved!):</b> ${stats.cached_tokens.toLocaleString()}${warning}`;
+🪙 *Token Usage:*
+*Prompt:* ${stats.prompt_tokens.toLocaleString()}
+*Output:* ${stats.completion_tokens.toLocaleString()}
+*Total:* ${total.toLocaleString()}
+⚡ *Cached (Saved\!):* ${stats.cached_tokens.toLocaleString()}${warning}`;
 
-    return ctx.reply(msg, { parse_mode: "HTML", message_thread_id: threadKey });
+    return ctx.reply(msg, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
   });
 
   bot.command("branch", async (ctx) => {
@@ -61,32 +62,30 @@ ${gitInfo}
     const match = ctx.match.trim();
 
     if (!match) {
-      return ctx.reply(`🤖 <b>Branch Management</b>\n\nSet branch: <code>/branch &lt;branch-name&gt;</code>\nList branches: <code>/branch list</code>`, { parse_mode: "HTML", message_thread_id: threadKey });
+      return ctx.reply(`🤖 *Branch Management*\n\nSet branch: \`/branch <branch\-name>\`\nList branches: \`/branch list\``, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
     }
 
     if (match.toLowerCase() === "list") {
-      const statusMsg = await ctx.reply("🔍 <i>Fetching branch list from remote...</i>", { parse_mode: "HTML", message_thread_id: threadKey });
+       const statusMsg = await ctx.reply("🔍 _Fetching branch list from remote\.\.\._", { parse_mode: "MarkdownV2", message_thread_id: threadKey });
       try {
         await execAsync("git fetch --all");
         const { stdout: branchesOut } = await execAsync("git branch -a");
         const branches = branchesOut.split("\n")
           .map(b => b.replace(/^\*/, "").trim())
           .filter(b => b.length > 0 && !b.includes("HEAD"));
-        
-        const branchList = branches.map(b => `• <code>${b}</code>`).join("\n");
-        return ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, `🌿 <b>Available Git Branches:</b>\n\n${branchList}`, { parse_mode: "HTML" });
+         const branchList = branches.map(b => `• \`${escapeMarkdownV2(b)}\``).join("\n");
+         return ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, `🌿 *Available Git Branches:*\n\n${branchList}`, { parse_mode: "MarkdownV2" });
       } catch (e: any) {
-        return ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, `⚠️ Error: ${e.message}`, { parse_mode: "HTML" });
+         return ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, `⚠️ Error: ${escapeMarkdownV2(e.message)}`, { parse_mode: "MarkdownV2" });
       }
     }
-
-    const statusMsg = await ctx.reply(`🔍 <i>Verifying branch "${match}"...</i>`, { parse_mode: "HTML", message_thread_id: threadKey });
+     const statusMsg = await ctx.reply(`🔍 _Verifying branch "${escapeMarkdownV2(match)}"\.\.\._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
     try {
       await execAsync("git fetch --all");
       try {
         await execAsync(`git show-ref --verify refs/heads/${match} || git show-ref --verify refs/remotes/origin/${match}`);
       } catch {
-        return ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, `❌ Branch <code>${match}</code> does not exist on remote or local repo.`, { parse_mode: "HTML" });
+         return ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, `❌ Branch \`${escapeMarkdownV2(match)}\` does not exist on remote or local repo\.`, { parse_mode: "MarkdownV2" });
       }
 
       // Write to boot.json
@@ -98,20 +97,19 @@ ${gitInfo}
       } catch {}
       bootData.target_branch = match;
       await fs.writeFile(bootFile, JSON.stringify(bootData, null, 2), "utf-8");
-
-      await ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, `🔄 <b>Switching target branch to:</b> <code>${match}</code>\n\n⌛ <i>Checking out, updating dependencies, typechecking, and restarting. Stand by...</i>`, { parse_mode: "HTML" });
+       await ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, `🔄 *Switching target branch to:* \`${escapeMarkdownV2(match)}\`\n\n⌛ _Checking out, updating dependencies, typechecking, and restarting\. Stand by\.\.\._`, { parse_mode: "MarkdownV2" });
       
       setTimeout(() => {
         process.exit(42);
       }, 1000);
     } catch (e: any) {
-      return ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, `⚠️ Failed to switch branch: ${e.message}`, { parse_mode: "HTML" });
+       return ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, `⚠️ Failed to switch branch: ${escapeMarkdownV2(e.message)}`, { parse_mode: "MarkdownV2" });
     }
   });
 
   bot.command("update", async (ctx) => {
     const threadKey = ctx.message?.message_thread_id || ctx.chat.id;
-    const statusMsg = await ctx.reply("🔍 <i>Checking remote for updates on current branch...</i>", { parse_mode: "HTML", message_thread_id: threadKey });
+    const statusMsg = await ctx.reply("🔍 _Checking remote for updates on current branch..._", { parse_mode: "MarkdownV2", message_thread_id: threadKey });
     
     try {
       await execAsync("git fetch --all");
@@ -128,8 +126,8 @@ ${gitInfo}
         return ctx.api.editMessageText(
           ctx.chat.id,
           statusMsg.message_id,
-          `✅ <b>Up to date!</b>\n\nBot is running the latest commit on branch <code>${currentBranch}</code>:\n<code>${localHash.substring(0, 7)}</code>`,
-          { parse_mode: "HTML" }
+          `✅ *Up to date!*\n\nBot is running the latest commit on branch \`${escapeMarkdownV2(currentBranch)}\`:\n\`${escapeMarkdownV2(localHash.substring(0, 7))}\``,
+          { parse_mode: "MarkdownV2" }
         );
       }
 
@@ -143,11 +141,11 @@ ${gitInfo}
       return ctx.api.editMessageText(
         ctx.chat.id,
         statusMsg.message_id,
-        `🔄 <b>Updates available on branch <code>${currentBranch}</code>!</b>\n\n📌 <b>Current Commit:</b> <code>${localHash.substring(0, 7)}</code>\n📡 <b>Remote Commit:</b> <code>${remoteHash.substring(0, 7)}</code>\n\n📄 <b>Changelog:</b>\n<pre><code>${log.trim() || "No detailed log."}</code></pre>`,
-        { parse_mode: "HTML", reply_markup: kb }
+        `🔄 *Updates available on branch \`${escapeMarkdownV2(currentBranch)}\`!*\n\n📌 *Current Commit:* \`${escapeMarkdownV2(localHash.substring(0, 7))}\`\n📡 *Remote Commit:* \`${escapeMarkdownV2(remoteHash.substring(0, 7))}\`\n\n📄 *Changelog:*\n\`\`\`\n${escapeMarkdownV2(log.trim() || "No detailed log.")}\n\`\`\``,
+        { parse_mode: "MarkdownV2", reply_markup: kb }
       );
     } catch (e: any) {
-      return ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, `⚠️ Failed to check updates: ${e.message}`, { parse_mode: "HTML" });
+      return ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, `⚠️ Failed to check updates: ${escapeMarkdownV2(e.message)}`, { parse_mode: "MarkdownV2" });
     }
   });
 
@@ -158,12 +156,12 @@ ${gitInfo}
     const currentModel = thread?.model_id || State.currentAiModel;
 
     if (!match) {
-      return ctx.reply(`🤖 <b>Current:</b> <code>${currentModel}</code>\n\n<b>Usage:</b>\nSet: <code>/model &lt;id&gt;</code>\nSearch: <code>/model search free</code>`, { parse_mode: "HTML", message_thread_id: threadKey });
+      return ctx.reply(`🤖 *Current:* \`${escapeMarkdownV2(currentModel)}\`\n\n*Usage:*\nSet: \`/model <id>\`\nSearch: \`/model search free\``, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
     }
 
     if (match.toLowerCase().startsWith("search ")) {
       const query = match.substring(7).trim().toLowerCase();
-      const statusMsg = await ctx.reply(`🔍 <i>Searching OpenRouter for "${query}"...</i>`, { parse_mode: "HTML", message_thread_id: threadKey });
+      const statusMsg = await ctx.reply(`🔍 _Searching OpenRouter for "${escapeMarkdownV2(query)}"..._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
 
       try {
         const response = await fetch("https://openrouter.ai/api/v1/models");
@@ -179,7 +177,7 @@ ${gitInfo}
         models = models.filter(m => m.id.length <= 60).slice(0, 10);
 
         if (models.length === 0) {
-          return ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, `❌ No models found matching "${query}".`, { parse_mode: "HTML" });
+          return ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, `❌ No models found matching "${escapeMarkdownV2(query)}"\.`, { parse_mode: "MarkdownV2" });
         }
 
         const kb = new InlineKeyboard();
@@ -190,18 +188,18 @@ ${gitInfo}
         return ctx.api.editMessageText(
           ctx.chat.id,
           statusMsg.message_id,
-          `🔍 <b>Results for "${query}"</b>:\n\n<i>Click a model below to switch to it instantly:</i>`,
-          { parse_mode: "HTML", reply_markup: kb }
+          `🔍 *Results for "${escapeMarkdownV2(query)}"*:\n\n_Click a model below to switch to it instantly:_`,
+          { parse_mode: "MarkdownV2", reply_markup: kb }
         );
       } catch (e: any) {
-        return ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, `⚠️ API Error: ${e.message}`, { parse_mode: "HTML" });
+        return ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, `⚠️ API Error: ${escapeMarkdownV2(e.message)}`, { parse_mode: "MarkdownV2" });
       }
     }
 
     DB.upsertThread(threadKey, { modelId: match });
     const systemPrompt = await getSystemPrompt(threadKey);
     DB.updateSystemPrompt(threadKey, systemPrompt);
-    ctx.reply(`✅ Model set to:\n<code>${match}</code>`, { parse_mode: "HTML", message_thread_id: threadKey });
+    ctx.reply(`✅ Model set to:\n\`${escapeMarkdownV2(match)}\``, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
   });
 
   bot.command("ai", async (ctx) => {
@@ -209,8 +207,8 @@ ${gitInfo}
     DB.upsertThread(threadKey, { lastActive: Date.now() });
 
     if (!ctx.match) {
-      return ctx.reply("🤖 <b>Usage:</b> <code>/ai &lt;your message&gt;</code>\n\n<i>Note: You can also just reply directly to any of my messages, or DM me to chat without using commands!</i>", {
-        parse_mode: "HTML",
+      return ctx.reply("🤖 *Usage:* \`/ai <your message>\`\n\n_Note: You can also just reply directly to any of my messages, or DM me to chat without using commands\!_", {
+        parse_mode: "MarkdownV2",
         message_thread_id: threadKey
       });
     }
@@ -233,6 +231,6 @@ export async function processUserMessage(bot: Bot, prompt: string, threadKey: nu
   const timeAwarePrompt = `${prompt}\n\n[Current Time: ${localTimeStr}]`;
 
   DB.addMessage(threadKey, { role: "user", content: timeAwarePrompt });
-  const statusMsg = await bot.api.sendMessage(chatId, `🤔 <i>Thinking...</i>`, { parse_mode: "HTML", message_thread_id: threadKey });
+  const statusMsg = await bot.api.sendMessage(chatId, `🤔 _Thinking..._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
   await runAgent(bot, threadKey, chatId, statusMsg.message_id);
 }
