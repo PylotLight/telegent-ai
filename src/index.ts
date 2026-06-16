@@ -151,23 +151,52 @@ async function start() {
     }
   });
 
-  // Replaced bottom startup lines:
-  bot.start({
-    onStart: (botInfo) => {
-      console.log(`✅ Authentication Successful!`);
-      console.log(`🤖 Agent online! Logged in as @${botInfo.username}`);
-      console.log(`🧠 Default Model: ${DEFAULT_MODEL}`);
+  // Graceful shutdown
+  const stopBot = async () => {
+    console.log("\n🛑 Shutting down gracefully...");
+    try {
+      await bot.stop();
+      console.log("✅ Bot polling stopped.");
+    } catch (err) {
+      console.error("❌ Error during bot stop:", err);
     }
-  }).catch((err) => {
-    if (err.description === "Not Found" || err.error_code === 404) {
-      console.error("\n❌ CRITICAL ERROR: Telegram returned '404 Not Found'.");
-      console.error("👉 This means your TELEGRAM_TOKEN is invalid or incorrect.");
-      console.error("👉 Please double-check your token in brain/secrets.json\n");
-    } else {
-      console.error("❌ CRITICAL ERROR: Failed to start bot:", err);
+    process.exit(0);
+  };
+
+  process.on("SIGTERM", stopBot);
+  process.on("SIGINT", stopBot);
+
+  // Start bot with retry logic for 409 Conflict
+  let attempts = 0;
+  const maxAttempts = 5;
+  while (attempts < maxAttempts) {
+    try {
+      await bot.start({
+        onStart: (botInfo) => {
+          console.log(`✅ Authentication Successful!`);
+          console.log(`🤖 Agent online! Logged in as @${botInfo.username}`);
+          console.log(`🧠 Default Model: ${DEFAULT_MODEL}`);
+        }
+      });
+      break; // Success, exit loop
+    } catch (err: any) {
+      attempts++;
+      if (err.error_code === 409 && attempts < maxAttempts) {
+        const delay = attempts * 2000;
+        console.log(`⚠️ Bot conflict (409). Another instance is running. Retrying in ${delay / 1000}s... (${attempts}/${maxAttempts})`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      } else {
+        if (err.description === "Not Found" || err.error_code === 404) {
+          console.error("\n❌ CRITICAL ERROR: Telegram returned '404 Not Found'.");
+          console.error("👉 This means your TELEGRAM_TOKEN is invalid or incorrect.");
+          console.error("👉 Please double-check your token in brain/secrets.json\n");
+        } else {
+          console.error("❌ CRITICAL ERROR: Failed to start bot:", err);
+        }
+        process.exit(1);
+      }
     }
-    process.exit(1);
-  });
+  }
 }
 
 
