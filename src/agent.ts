@@ -7,7 +7,7 @@ import { OPENROUTER_API_KEY, getSystemPrompt, loadAgentConfig } from "./config";
 import { State } from "./state";
 import { AGENT_TOOLS, TTS_TOOL, executeToolLocally } from "./tools";
 import { DB } from "./db";
-import { escapeMarkdownV2 } from "./utils";
+import { escapeMarkdownV2, escapeMarkdownV2WithCode } from "./utils";
 import { withRetry } from "./resilience";
 
 const CONTEXT_TOKEN_LIMIT = 100000;
@@ -254,8 +254,10 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
 
       const allTools = [...AGENT_TOOLS, TTS_TOOL];
 
+      // Find the final message block:
       if (!msg.tool_calls || msg.tool_calls.length === 0) {
-        const finalText = msg.content || "Done.";
+        // Use the new smart escaper
+        const finalText = escapeMarkdownV2WithCode(msg.content || "Done.");
         await bot.api.sendMessage(chatId, finalText, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
         return;
       }

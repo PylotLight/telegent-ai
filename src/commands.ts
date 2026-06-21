@@ -44,7 +44,7 @@ export function setupCommands(bot: Bot) {
     const msg = `📊 *LLM Context Status*
 *State:* 🟢 Listening
 *Memory:* ${history.length} msgs
-*Context:* ~${stats.last_context_size.toLocaleString()} tokens
+*Context:* \~${stats.last_context_size.toLocaleString()} tokens
 *Model:* \`${escapeMarkdownV2(model)}\`
 ${gitInfo}
 

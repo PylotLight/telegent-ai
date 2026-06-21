@@ -124,7 +124,7 @@ async function start() {
     }
 
     if (action === "approve") {
-      await updateMessage(`⏳ *Executing...*\n\`\`\`${escapeMarkdownV2(pending.command)}\n\`\`\``);
+      await updateMessage(`⏳ *Executing\.\.\.*\n\`\`\`${escapeMarkdownV2(pending.command)}\n\`\`\``);
       try {
         const { stdout, stderr } = await execAsync(pending.command);
         DB.addMessage(pending.thread_key, { role: "tool", content: (stdout || stderr || "Done").slice(0, 4000), toolCallId: pending.tool_call_id });
