@@ -16,6 +16,6 @@
     "croner": "^10.0.1",
     "grammy": "^1.44.0",
     "lifx-lan-client": "^2.1.2",
-    "openai": "^6.42.0"
+    "openai": "^6.44.0"
   }
 }
