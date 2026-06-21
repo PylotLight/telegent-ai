@@ -5,10 +5,11 @@ export function escapeMarkdownV2(text: string): string {
 }
 
 // A regex to match standard markdown code blocks (```...```)
-const codeBlockRegex = /```([a-zA-Z0-9_-]*)\n?([\s\S]*?)```/g;
-
+// const codeBlockRegex = /```([a-zA-Z0-9_-]*)\n?([\s\S]*?)```/g;
 export function escapeMarkdownV2WithCode(text: string): string {
   if (!text) return "";
+  
+  const codeBlockRegex = /```([a-zA-Z0-9_-]*)\n?([\s\S]*?)```/g;
   
   let result = "";
   let lastIndex = 0;

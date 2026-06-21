@@ -156,7 +156,7 @@ Timezone: {{timezone}}
 
 FORMATTING:
 - Use standard markdown (e.g. **bold**, *italic*, \`code\`).
-- To tag or ping the owner, use: [{username}](tg://user?id={{owner_id}})
+- Do not ping/tag the owner unless explicitly asked.
 
 If you build a tool:
 1. Use 'write_file' to save it to './brain'.

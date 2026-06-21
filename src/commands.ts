@@ -44,7 +44,7 @@ export function setupCommands(bot: Bot) {
     const msg = `📊 *LLM Context Status*
 *State:* 🟢 Listening
 *Memory:* ${history.length} msgs
-*Context:* \~${stats.last_context_size.toLocaleString()} tokens
+*Context:* \~${escapeMarkdownV2(stats.last_context_size.toLocaleString())} tokens
 *Model:* \`${escapeMarkdownV2(model)}\`
 ${gitInfo}
 
@@ -66,7 +66,7 @@ ${gitInfo}
     }
 
     if (match.toLowerCase() === "list") {
-       const statusMsg = await ctx.reply("🔍 _Fetching branch list from remote\.\.\._", { parse_mode: "MarkdownV2", message_thread_id: threadKey });
+       const statusMsg = await ctx.reply("🔍 _Fetching branch list from remote\\.\\.\\._",{ parse_mode: "MarkdownV2", message_thread_id: threadKey });
       try {
         await execAsync("git fetch --all");
         const { stdout: branchesOut } = await execAsync("git branch -a");
@@ -79,7 +79,7 @@ ${gitInfo}
          return ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, `⚠️ Error: ${escapeMarkdownV2(e.message)}`, { parse_mode: "MarkdownV2" });
       }
     }
-     const statusMsg = await ctx.reply(`🔍 _Verifying branch "${escapeMarkdownV2(match)}"\.\.\._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
+     const statusMsg = await ctx.reply(`🔍 _Verifying branch "${escapeMarkdownV2(match)}"\\.\\.\\._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
     try {
       await execAsync("git fetch --all");
       try {
@@ -97,7 +97,7 @@ ${gitInfo}
       } catch {}
       bootData.target_branch = match;
       await fs.writeFile(bootFile, JSON.stringify(bootData, null, 2), "utf-8");
-       await ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, `🔄 *Switching target branch to:* \`${escapeMarkdownV2(match)}\`\n\n⌛ _Checking out, updating dependencies, typechecking, and restarting\. Stand by\.\.\._`, { parse_mode: "MarkdownV2" });
+       await ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, `🔄 *Switching target branch to:* \`${escapeMarkdownV2(match)}\`\n\n⌛ _Checking out, updating dependencies, typechecking, and restarting\\. Stand by\\.\\.\\._`, { parse_mode: "MarkdownV2" });
       
       setTimeout(() => {
         process.exit(42);
@@ -109,7 +109,7 @@ ${gitInfo}
 
   bot.command("update", async (ctx) => {
     const threadKey = ctx.message?.message_thread_id || ctx.chat.id;
-    const statusMsg = await ctx.reply("🔍 _Checking remote for updates on current branch\.\.\._", { parse_mode: "MarkdownV2", message_thread_id: threadKey });
+    const statusMsg = await ctx.reply("🔍 _Checking remote for updates on current branch\\.\\.\\._", { parse_mode: "MarkdownV2", message_thread_id: threadKey });
     
     try {
       await execAsync("git fetch --all");
@@ -126,7 +126,7 @@ ${gitInfo}
         return ctx.api.editMessageText(
           ctx.chat.id,
           statusMsg.message_id,
-          `✅ *Up to date\!*\n\nBot is running the latest commit on branch \`${escapeMarkdownV2(currentBranch)}\`:\n\`${escapeMarkdownV2(localHash.substring(0, 7))}\``,
+          `✅ *Up to date\\!*\n\nBot is running the latest commit on branch \`${escapeMarkdownV2(currentBranch)}\`:\n\`${escapeMarkdownV2(localHash.substring(0, 7))}\``,
           { parse_mode: "MarkdownV2" }
         );
       }
@@ -161,7 +161,7 @@ ${gitInfo}
 
     if (match.toLowerCase().startsWith("search ")) {
       const query = match.substring(7).trim().toLowerCase();
-      const statusMsg = await ctx.reply(`🔍 _Searching OpenRouter for "${escapeMarkdownV2(query)}"\.\.\._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
+      const statusMsg = await ctx.reply(`🔍 _Searching OpenRouter for "${escapeMarkdownV2(query)}"\\.\\.\\._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
 
       try {
         const response = await fetch("https://openrouter.ai/api/v1/models");
@@ -222,11 +222,11 @@ ${gitInfo}
     const hasActiveAI = State.activeAbortControllers.has(threadKey);
 
     if (!hasActiveProcess && !hasActiveAI) {
-      return ctx.reply("❌ No active command or AI run to cancel.", { message_thread_id: threadKey });
+      return ctx.reply("❌ No active command or AI run to cancel\\.", { message_thread_id: threadKey });
     }
 
     State.abortRun(threadKey);
-    return ctx.reply("🛑 Active execution/thinking cancelled.", { message_thread_id: threadKey });
+    return ctx.reply("🛑 Active execution/thinking cancelled\\.", { message_thread_id: threadKey });
   });
 }
 
@@ -245,6 +245,6 @@ export async function processUserMessage(bot: Bot, prompt: string, threadKey: nu
 
   DB.addMessage(threadKey, { role: "user", content: timeAwarePrompt });
   const cancelKb = new InlineKeyboard().text("❌ Cancel", `cancel_run:${threadKey}`);
-  const statusMsg = await bot.api.sendMessage(chatId, `🤔 _Thinking\.\.\._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey, reply_markup: cancelKb });
+  const statusMsg = await bot.api.sendMessage(chatId, `🤔 _Thinking\\.\\.\\._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey, reply_markup: cancelKb });
   await runAgent(bot, threadKey, chatId, statusMsg.message_id);
 }

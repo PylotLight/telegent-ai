@@ -37,6 +37,26 @@ async function safeEditMessage(bot: Bot, chatId: number, messageId: number, text
   }
 }
 
+// HELPER: Safely send message, log the payload on error, and fallback to plain text
+async function safeSendMessage(bot: Bot, chatId: number, text: string, options: any = {}) {
+  try {
+    await bot.api.sendMessage(chatId, text, options);
+  } catch (e: any) {
+    console.error("\n[sendMessage ERROR] Failed to send message:", e.message);
+    console.error("[sendMessage ERROR] Payload was:\n-------------------\n", text, "\n-------------------\n");
+    
+    // If it was a Markdown error, try sending as plain text so the bot doesn't hang
+    if (options.parse_mode) {
+      try {
+        DB.log("WARN", "Falling back to plain text for message");
+        await bot.api.sendMessage(chatId, text, { ...options, parse_mode: undefined });
+      } catch (fallbackErr: any) {
+        DB.log("ERROR", `safeSendMessage fallback failed: ${fallbackErr.message}`);
+      }
+    }
+  }
+}
+
 export async function runAgent(bot: Bot, threadKey: number, chatId: number, statusMsgId: number) {
   // Abort any existing run for this thread first
   State.abortRun(threadKey);
@@ -199,7 +219,7 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
         for (const fallbackModel of fallbackModels) {
           if (fallbackModel === model) continue; // Skip the current model
           DB.log("WARN", `Switching to fallback model: ${fallbackModel}`);
-          await safeEditMessage(bot, chatId, statusMsgId, `🔄 _Model error\. Retrying with fallback\.\.\._`, { parse_mode: "MarkdownV2", reply_markup: cancelKb });
+          await safeEditMessage(bot, chatId, statusMsgId, `🔄 _Model error\\. Retrying with fallback\\.\\.\\._`, { parse_mode: "MarkdownV2", reply_markup: cancelKb });
 
           try {
             // Use the same retry logic with the fallback model
@@ -258,7 +278,7 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
       if (!msg.tool_calls || msg.tool_calls.length === 0) {
         // Use the new smart escaper
         const finalText = escapeMarkdownV2WithCode(msg.content || "Done.");
-        await bot.api.sendMessage(chatId, finalText, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
+        await safeEditMessage(bot, chatId, statusMsgId, finalText, { parse_mode: "MarkdownV2" });
         return;
       }
 
@@ -298,16 +318,16 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
             
             if (typeof result === "object" && result.audio_file) {
               await bot.api.sendAudio(chatId, new InputFile(fs.createReadStream(result.audio_file)));
-              await bot.api.sendMessage(chatId, `🔊 _Audio response sent\._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
+              await bot.api.sendMessage(chatId, `🔊 _Audio response sent\\._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
               await fsp.unlink(result.audio_file).catch(() => { });
             } else {
-              await bot.api.sendMessage(chatId, `🔧 *Tool Executed:* \`${tool.function.name}\`\n\n📄 *Result:*\n\`\`\`\n${(result || "").slice(0, 2000)}\n\`\`\``, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
+              await safeSendMessage(bot, chatId, `🔧 *Tool Executed:* \`${tool.function.name}\`\n\n📄 *Result:*\n\`\`\`\n${(result || "").slice(0, 2000)}\n\`\`\``, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
             }
           }
         }
-// If we have executed any non-shell tools, update the chat to show we are done with tool execution
+      // If we have executed any non-shell tools, update the chat to show we are done with tool execution
       if (!pendingShellTool && executedToolsInLoop.length > 0) {
-        await safeEditMessage(bot, chatId, statusMsgId, `💭 _Finished executing tools\. Thinking\.\.\._`, { parse_mode: "MarkdownV2", reply_markup: cancelKb });
+        await safeEditMessage(bot, chatId, statusMsgId, `💭 _Finished executing tools\\. Thinking\\.\\.\\._`, { parse_mode: "MarkdownV2", reply_markup: cancelKb });
       }
 
       toolResults.forEach(res => {
@@ -327,17 +347,17 @@ export async function runAgent(bot: Bot, threadKey: number, chatId: number, stat
 
       // ENHANCED VISIBILITY: List the tools that were just run
       const toolList = runningTools.join(", ");
-      await bot.api.sendMessage(chatId, `🔄 _Executed: \`${toolList}\`\. Continuing thought\.\.\._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
+      await bot.api.sendMessage(chatId, `🔄 _Executed: \`${toolList}\`\\. Continuing thought\\.\\.\\._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
     }
     // If loop finishes without return
-    await bot.api.sendMessage(chatId, `⚠️ _Agent hit maximum thought loops (5)\._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
+    await bot.api.sendMessage(chatId, `⚠️ _Agent hit maximum thought loops (5)\\._`, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
   } catch (globalError: any) {
     if (signal.aborted || globalError.message === "Aborted") {
       DB.log("INFO", `runAgent execution for thread ${threadKey} was aborted.`);
-      await safeEditMessage(bot, chatId, statusMsgId, `❌ *Thinking Cancelled\.*`, { parse_mode: "MarkdownV2" });
+      await safeEditMessage(bot, chatId, statusMsgId, `❌ *Thinking Cancelled\\.*`, { parse_mode: "MarkdownV2" });
       return;
     }
-    DB.log("CRITICAL", `runAgent Global Error: ${globalError.message}`);
+
     await bot.api.sendMessage(chatId, `❌ *Internal Agent Error:*\n\`\`\`\n${escapeMarkdownV2(globalError.message)}\n\`\`\``, { parse_mode: "MarkdownV2", message_thread_id: threadKey });
   } finally {
     if (State.activeAbortControllers.get(threadKey) === controller) {

@@ -19,6 +19,19 @@ async function start() {
 
   // 2. Initialize Bot
   const bot = new Bot(TELEGRAM_TOKEN);
+  // INTERCEPT ALL OUTGOING API CALLS TO LOG MARKDOWNV2 ERRORS
+
+  bot.api.config.use(async (prev, method, payload) => {
+  const res = await prev(method, payload);
+  if (!res.ok && res.description?.includes("can't parse entities")) {
+    console.error("\n========================================");
+    console.error("[MARKDOWN ERROR INTERCEPTED] Method:", method);
+    console.error("[MARKDOWN ERROR INTERCEPTED] Error:", res.description);
+    console.error("[MARKDOWN ERROR INTERCEPTED] Payload:", JSON.stringify(payload, null, 2));
+    console.error("========================================\n");
+  }
+  return res;
+});
   initScheduler(bot);
   // Auth Middleware
   bot.use(async (ctx, next) => {
@@ -57,7 +70,7 @@ async function start() {
         await bot.api.editMessageText(
           ctx.chat.id,
           ctx.callbackQuery.message.message_id,
-          "⏳ *Pulling updates, typechecking, and hot\-swapping\. Stand by\.\.\.*",
+          "⏳ *Pulling updates, typechecking, and hot\\-swapping\\. Stand by\\.\\.\\.*",
           { parse_mode: "MarkdownV2" }
         );
       }
@@ -68,12 +81,12 @@ async function start() {
     }
 
     if (data === "upd:cancel") {
-      await ctx.answerCallbackQuery({ text: "Upgrade cancelled." });
+      await ctx.answerCallbackQuery({ text: "Upgrade cancelled\\." });
       if (ctx.chat && ctx.callbackQuery.message) {
         await bot.api.editMessageText(
           ctx.chat.id,
           ctx.callbackQuery.message.message_id,
-          "❌ *Upgrade cancelled\.*",
+          "❌ *Upgrade cancelled\\.*",
           { parse_mode: "MarkdownV2" }
         );
       }
@@ -113,7 +126,18 @@ async function start() {
     const history = DB.getMessages(pending.thread_key);
     if (!history || history.length === 0) return ctx.answerCallbackQuery("Memory lost");
 
-    const updateMessage = async (text: string) => bot.api.editMessageText(pending.chat_id, pending.status_msg_id, text, { parse_mode: "MarkdownV2" });
+    const updateMessage = async (text: string) => {
+      try {
+        await bot.api.editMessageText(pending.chat_id, pending.status_msg_id, text, { parse_mode: "MarkdownV2" });
+      } catch (e: any) {
+        console.error("\n[editMessage ERROR] Failed:", e.message);
+        console.error("[editMessage ERROR] Payload was:\n-------------------\n", text, "\n-------------------\n");
+        // Fallback to plain text
+        try {
+          await bot.api.editMessageText(pending.chat_id, pending.status_msg_id, text, { parse_mode: undefined });
+        } catch {}
+      }
+    };
 
     if (action === "reject") {
       DB.addMessage(pending.thread_key, { role: "tool", content: "User rejected execution.", toolCallId: pending.tool_call_id });
@@ -124,7 +148,7 @@ async function start() {
     }
 
     if (action === "approve") {
-      await updateMessage(`⏳ *Executing\.\.\.*\n\`\`\`${escapeMarkdownV2(pending.command)}\n\`\`\``);
+      await updateMessage(`⏳ *Executing\\.\\.\\.*\n\`\`\`${escapeMarkdownV2(pending.command)}\n\`\`\``);
       try {
         const { stdout, stderr } = await execAsync(pending.command);
         DB.addMessage(pending.thread_key, { role: "tool", content: (stdout || stderr || "Done").slice(0, 4000), toolCallId: pending.tool_call_id });
